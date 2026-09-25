@@ -1,0 +1,651 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 206 100% 22%; /* #004171 */
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 199 89% 48%; /* #0284c7 */
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 206 100% 22%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 204 70% 8%; /* #081d2c */
+    --foreground: 210 40% 98%;
+    --card: 204 60% 12%;
+    --card-foreground: 210 40% 98%;
+    --popover: 204 60% 10%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 206 100% 22%; /* #004171 */
+    --primary-foreground: 210 40% 98%;
+    --secondary: 204 40% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 204 40% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 199 89% 48%; /* #0284c7 */
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 204 45% 20%;
+    --input: 204 45% 20%;
+    --ring: 206 100% 30%;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: 'Poppins', 'Inter', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+html.dark body {
+  background-color: #081d2c;
+  color: #f1f5f9;
+}
+
+html.light body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Poppins', 'Inter', system-ui, sans-serif;
+}
+
+/* Custom glowing orbs in Monteplan signature Deep Blue and Cyan/Navy */
+.bg-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(85px);
+  pointer-events: none;
+  opacity: 0.35;
+  z-index: 0;
+  animation: floatOrb 20s ease-in-out infinite alternate;
+}
+
+html.light .bg-orb {
+  opacity: 0.12;
+}
+
+.bg-orb-1 {
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, #004171 0%, #082436 75%);
+  top: -80px;
+  right: -80px;
+}
+
+.bg-orb-2 {
+  width: 540px;
+  height: 540px;
+  background: radial-gradient(circle, #1a4d6e 0%, #0b1724 75%);
+  bottom: -150px;
+  left: -120px;
+  animation-duration: 24s;
+  animation-delay: -6s;
+}
+
+.bg-orb-3 {
+  width: 380px;
+  height: 380px;
+  background: radial-gradient(circle, #0284c7 0%, #004171 70%);
+  top: 30%;
+  right: 20%;
+  animation-duration: 28s;
+  animation-delay: -12s;
+  opacity: 0.2;
+}
+
+@keyframes floatOrb {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(30px, -40px) scale(1.08);
+  }
+  100% {
+    transform: translate(-30px, 30px) scale(0.95);
+  }
+}
+
+/* ================= DARK MODE STYLES ================= */
+html.dark .glass-panel {
+  background: rgba(12, 35, 54, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+}
+
+html.dark .glass-card {
+  background: rgba(14, 40, 62, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(31, 64, 97, 0.6);
+  transition: all 0.2s ease-in-out;
+}
+
+html.dark .glass-card:hover {
+  border-color: rgba(56, 189, 248, 0.28);
+  box-shadow: 0 10px 25px -5px rgba(0, 65, 113, 0.25);
+}
+
+html.dark .glass-input {
+  background: rgba(8, 29, 44, 0.7);
+  border: 1px solid rgba(31, 64, 97, 0.8);
+  color: #ffffff;
+}
+
+html.dark .glass-input:focus {
+  outline: none;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+
+/* ================= LIGHT MODE STYLES ================= */
+html.light .glass-panel {
+  background: #ffffff;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 20px 25px -5px rgba(0, 65, 113, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+}
+
+html.light .glass-card {
+  background: #ffffff;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px -2px rgba(0, 65, 113, 0.05), 0 1px 3px 0 rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease-in-out;
+}
+
+html.light .glass-card:hover {
+  border-color: #004171;
+  box-shadow: 0 10px 25px -5px rgba(0, 65, 113, 0.12);
+}
+
+html.light .glass-input {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+html.light .glass-input:focus {
+  outline: none;
+  border-color: #004171;
+  box-shadow: 0 0 0 2px rgba(0, 65, 113, 0.18);
+}
+
+/* ==========================================================================
+/* ==========================================================================
+   REGRA MESTRA DE CONTRASTE E TIPOGRAFIA (MODO CLARO E MODO ESCURO)
+   Lógica mandatória:
+   1. No modo claro: a fonte DEVE ser escura (#0f172a / #1e293b).
+   2. No modo escuro: a fonte DEVE ser clara (#ffffff / #f1f5f9).
+   3. INVERSÃO:
+      - Elemento ESCURO (no modo claro ou escuro): a fonte DEVE ser CLARA (#ffffff).
+        (Ex: avatar azul escuro #004171, botão ativo no menu #004171, botões de ação primários,
+        badges de notificação, marcadores no mapa, cabeçalhos de modais escuros).
+      - Elemento CLARO (no modo escuro ou claro): a fonte DEVE ser ESCURA (#0f172a).
+        (Ex: badges com fundo claro tipo bg-sky-100, bg-amber-100, bg-emerald-100, bg-white).
+   ========================================================================== */
+
+/* 1. Modo Claro Base: todas as superfícies e textos claros viram fonte escura */
+html.light {
+  color-scheme: light;
+  color: #0f172a;
+}
+
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light main,
+html.light aside,
+html.light header,
+html.light .glass-card,
+html.light .glass-panel {
+  color: #0f172a;
+}
+
+/* Todos os títulos no modo claro são escuros */
+html.light h1,
+html.light h2,
+html.light h3,
+html.light h4,
+html.light h5,
+html.light h6 {
+  color: #0f172a;
+}
+
+/* Elementos com text-white dentro de containers claros no modo claro: FORÇAR FONTE ESCURA */
+html.light .glass-card .text-white,
+html.light .glass-panel .text-white,
+html.light main .text-white,
+html.light aside .text-white:not([data-active="true"] *),
+html.light header .text-white:not(.user-avatar *):not([class*="bg-[#004171]"]) {
+  color: #0f172a !important;
+}
+
+/* Cores de texto slate no modo claro: sempre legíveis e escuras */
+html.light .text-slate-100,
+html.light .text-slate-200,
+html.light .text-slate-300 {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-400 {
+  color: #475569 !important;
+}
+
+html.light .text-slate-500 {
+  color: #334155 !important;
+}
+
+html.light .text-slate-600 {
+  color: #1e293b !important;
+}
+
+html.light .text-slate-700,
+html.light .text-slate-800,
+html.light .text-slate-900 {
+  color: #0f172a !important;
+}
+
+/* Inputs, selects e textareas no modo claro */
+html.light select,
+html.light input,
+html.light textarea {
+  color: #0f172a !important;
+}
+
+html.light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Standalone cyan text no modo claro: converte para azul corporativo Monteplan de alto contraste */
+html.light .text-\[\#38bdf8\] {
+  color: #004171 !important;
+}
+
+/* 2. INVERSÃO: Elementos ESCUROS no Modo Claro -> FONTE OBRIGATORIAMENTE CLARA (#ffffff) */
+/* Círculo do avatar do usuário */
+html.light .user-avatar,
+html.light .user-avatar *,
+html.light .user-avatar span {
+  color: #ffffff !important;
+}
+
+/* Item ativo no menu lateral (fundo azul corporativo escuro #004171) */
+html.light aside nav button[data-active="true"],
+html.light aside nav button[data-active="true"] *,
+html.light aside nav button[data-active="true"] span,
+html.light aside nav button[data-active="true"] svg {
+  background-color: #004171 !important;
+  color: #ffffff !important;
+}
+
+/* Botões primários e de fundo escuro */
+html.light .btn-primary,
+html.light .btn-primary *,
+html.light button.bg-\[\#004171\],
+html.light button.bg-\[\#004171\] *,
+html.light a.bg-\[\#004171\],
+html.light a.bg-\[\#004171\] *,
+html.light button[class*="from-[#004171]"],
+html.light button[class*="from-[#004171]"] *,
+html.light .text-white-force,
+html.light .text-white-force * {
+  color: #ffffff !important;
+}
+
+/* Botões com cores de destaque sólidas escuras (azul, verde, vermelho) */
+html.light button.bg-blue-600,
+html.light button.bg-blue-600 *,
+html.light button.bg-emerald-600,
+html.light button.bg-emerald-600 *,
+html.light button.bg-red-600,
+html.light button.bg-red-600 *,
+html.light button.bg-indigo-600,
+html.light button.bg-indigo-600 * {
+  color: #ffffff !important;
+}
+
+/* Badge de contagem de alertas no sino (fundo azul escuro) */
+html.light header span.bg-\[\#004171\],
+html.light header span.bg-\[\#004171\] * {
+  color: #ffffff !important;
+}
+
+/* Marcadores e popups do Leaflet que usam fundo escuro */
+html.light .custom-leaflet-div-icon,
+html.light .custom-leaflet-div-icon *,
+html.light .leaflet-popup-content,
+html.light .leaflet-popup-content * {
+  color: #ffffff !important;
+}
+
+/* 3. INVERSÃO: Elementos CLAROS (no modo escuro e no modo claro) -> FONTE OBRIGATORIAMENTE ESCURA */
+/* Badges e pílulas com fundo claro */
+html.light .bg-sky-50 *,
+html.light .bg-sky-100 *,
+html.dark .bg-sky-100 * {
+  color: #004171 !important;
+}
+
+html.light .bg-emerald-100 *,
+html.dark .bg-emerald-100 * {
+  color: #065f46 !important;
+}
+
+html.light .bg-amber-100 *,
+html.dark .bg-amber-100 * {
+  color: #92400e !important;
+}
+
+html.light .bg-red-100 *,
+html.dark .bg-red-100 * {
+  color: #991b1b !important;
+}
+
+html.light .bg-cyan-100 *,
+html.dark .bg-cyan-100 * {
+  color: #155e75 !important;
+}
+
+html.dark .bg-white:not([class*="dark:bg-"]):not(aside):not(aside *),
+html.dark .bg-white:not([class*="dark:bg-"]):not(aside):not(aside *) * {
+  color: #0f172a !important;
+}
+
+/* Badges azul-claros translúcidos no modo claro */
+html.light .bg-\[\#004171\]\/50,
+html.light .bg-\[\#004171\]\/40,
+html.light .bg-\[\#004171\]\/30,
+html.light .bg-\[\#004171\]\/25,
+html.light .bg-\[\#004171\]\/20 {
+  background-color: #e0f2fe !important;
+  border-color: #bae6fd !important;
+  color: #004171 !important;
+}
+
+html.light .bg-\[\#004171\]\/50 *,
+html.light .bg-\[\#004171\]\/40 *,
+html.light .bg-\[\#004171\]\/30 *,
+html.light .bg-\[\#004171\]\/25 *,
+html.light .bg-\[\#004171\]\/20 * {
+  color: #004171 !important;
+}
+
+/* Sidebar Specific Contrast Rules in Light Mode */
+html.light aside {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Sidebar unselected buttons: must be dark font */
+html.light aside nav button:not([data-active="true"]) {
+  color: #0f172a !important;
+}
+
+html.light aside nav button:not([data-active="true"]) span {
+  color: #0f172a !important;
+  font-weight: 600;
+}
+
+html.light aside nav button:not([data-active="true"]) svg {
+  color: #1e293b !important;
+}
+
+html.light aside nav button:not([data-active="true"]):hover {
+  background-color: #f1f5f9 !important;
+  color: #000000 !important;
+}
+
+/* Sidebar selected button: must be light font on dark blue */
+html.light aside nav button[data-active="true"] {
+  background-color: #004171 !important;
+  color: #ffffff !important;
+}
+
+html.light aside nav button[data-active="true"] span,
+html.light aside nav button[data-active="true"] svg {
+  color: #ffffff !important;
+}
+
+/* Sidebar Specific Contrast Rules in Dark Mode (Fonte Clara Obrigatória) */
+html.dark aside,
+.dark aside {
+  background-color: #081d2c !important;
+  border-color: #1c3e5c !important;
+}
+
+/* Sidebar unselected buttons: fonte clara e legível no modo escuro */
+html.dark aside nav button:not([data-active="true"]),
+.dark aside nav button:not([data-active="true"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark aside nav button:not([data-active="true"]) span,
+.dark aside nav button:not([data-active="true"]) span {
+  color: #e2e8f0 !important;
+  font-weight: 600;
+}
+
+html.dark aside nav button:not([data-active="true"]) svg,
+.dark aside nav button:not([data-active="true"]) svg {
+  color: #94a3b8 !important;
+}
+
+html.dark aside nav button:not([data-active="true"]):hover,
+.dark aside nav button:not([data-active="true"]):hover {
+  background-color: #0c2336 !important;
+  color: #ffffff !important;
+}
+
+html.dark aside nav button:not([data-active="true"]):hover span,
+.dark aside nav button:not([data-active="true"]):hover span {
+  color: #ffffff !important;
+}
+
+html.dark aside nav button:not([data-active="true"]):hover svg,
+.dark aside nav button:not([data-active="true"]):hover svg {
+  color: #38bdf8 !important;
+}
+
+/* Sidebar selected button: fonte clara sobre fundo azul Monteplan */
+html.dark aside nav button[data-active="true"],
+.dark aside nav button[data-active="true"] {
+  background-color: #004171 !important;
+  color: #ffffff !important;
+}
+
+html.dark aside nav button[data-active="true"] span,
+.dark aside nav button[data-active="true"] span,
+html.dark aside nav button[data-active="true"] svg,
+.dark aside nav button[data-active="true"] svg {
+  color: #ffffff !important;
+}
+
+/* Tipografia e Logo Monteplan no Sidebar em Modo Escuro */
+html.dark aside .text-white,
+.dark aside .text-white {
+  color: #ffffff !important;
+}
+
+html.dark aside span.font-black,
+.dark aside span.font-black {
+  color: #ffffff !important;
+}
+
+html.dark aside .text-slate-300,
+.dark aside .text-slate-300 {
+  color: #cbd5e1 !important;
+}
+
+/* Standalone cyan text on light background converted to high-contrast corporate blue */
+html.light .text-\[\#38bdf8\] {
+  color: #004171;
+}
+
+/* BUT cyan inside dark containers stays bright cyan */
+html.light .bg-\[\#004171\] .text-\[\#38bdf8\],
+html.light .bg-\[\#081d2c\] .text-\[\#38bdf8\],
+html.light [data-active="true"] .text-\[\#38bdf8\] {
+  color: #7dd3fc !important;
+}
+
+/* Light mode table headers */
+html.light thead {
+  background-color: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html.light thead th {
+  color: #334155 !important;
+  font-weight: 700 !important;
+}
+
+html.light tbody tr:hover {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+/* Form selects in light mode */
+html.light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-slate-900,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/50,
+html.light .bg-slate-900\/40 {
+  background-color: #f1f5f9 !important;
+}
+
+html.light .bg-slate-950,
+html.light .bg-slate-950\/90,
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/70,
+html.light .bg-slate-950\/40 {
+  background-color: #f8fafc !important;
+}
+
+html.light .bg-slate-800,
+html.light .bg-slate-800\/90,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-800\/60,
+html.light .bg-slate-800\/50,
+html.light .bg-slate-800\/40,
+html.light .bg-slate-800\/30 {
+  background-color: #e2e8f0 !important;
+}
+
+html.light .border-slate-800,
+html.light .border-slate-800\/60,
+html.light .border-slate-800\/50,
+html.light .border-slate-700 {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .divide-slate-800,
+html.light .divide-slate-800\/60 {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .hover\:bg-slate-800\/40:hover,
+html.light .hover\:bg-slate-800\/30:hover,
+html.light .hover\:bg-slate-800\/50:hover,
+html.light .hover\:bg-slate-900\/40:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #081d2c;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #1c3e5c;
+  border-radius: 9999px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #004171;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Print utilities */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Leaflet Custom Styles */
+.custom-leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 1rem !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: inherit !important;
+}
+.leaflet-popup-tip {
+  background: #0f172a !important;
+  border: 1px solid #0284c7 !important;
+}
+.monteplan-map-tiles {
+  filter: brightness(0.85) contrast(1.2) hue-rotate(190deg) saturate(1.5) !important;
+}
+
