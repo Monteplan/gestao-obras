@@ -12,5 +12,17 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    watch: {
+      ignored: [
+        '**/scratch/**',
+        '**/scratch_chrome/**',
+        '**/data/**',
+        '**/docs/**',
+        '**/supabase/**',
+        '**/.git/**',
+        '**/node_modules/**',
+        '**/dist/**',
+      ],
+    },
   },
 });
