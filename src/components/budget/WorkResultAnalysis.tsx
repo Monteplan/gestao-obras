@@ -5,10 +5,8 @@ import { useData } from '../../contexts/DataContext';
 import {
   ATRIUM_DRE_SUMMARY,
   ATRIUM_DRE_LINES,
-  ATRIUM_DEPARA_RULES,
-  ATRIUM_OBRA_ACCOUNTS,
-  isConstructionAccount,
   DreItem,
+  isConstructionAccount,
 } from '../../lib/atrium-dre-data';
 import { DreAccountEntriesCard } from './DreAccountEntriesCard';
 import {
@@ -28,7 +26,6 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
-  ArrowRightLeft,
   Info,
   Briefcase,
   Hammer,
@@ -39,14 +36,8 @@ import {
   Sparkles,
   Activity,
   Calculator,
-  Save,
-  RotateCcw,
-  Plus,
-  Trash2,
-  Check,
 } from 'lucide-react';
 import { DataProvenanceBadge } from '../common/DataProvenanceBadge';
-import { logAudit } from '../../lib/supabase';
 
 interface WorkResultAnalysisProps {
   work?: Work;
@@ -60,7 +51,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
   const { works } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
 
-  const [activeSubTab, setActiveSubTab] = useState<'dre' | 'depara' | 'indicadores'>('dre');
+  const [activeSubTab, setActiveSubTab] = useState<'dre' | 'indicadores'>('dre');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [selectedDreLine, setSelectedDreLine] = useState<DreItem | null>(null);
@@ -122,180 +113,6 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
 
     return lines;
   }, [searchTerm, selectedCategory]);
-
-  // Matriz De-Para Editável com Persistência
-  type EscopoType = 'Custo de Obra' | 'DRE / Corporativo';
-
-  const [deparaRules, setDeparaRules] = useState<Array<{ origem: string; destino: string; escopo?: EscopoType }>>(() => {
-    try {
-      const saved = localStorage.getItem('atrium_custom_depara_rules');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error('Error loading custom depara rules', e);
-    }
-    return ATRIUM_DEPARA_RULES.map((r) => ({
-      ...r,
-      escopo: (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo') as EscopoType,
-    }));
-  });
-
-  const [savedBaseline, setSavedBaseline] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('atrium_custom_depara_rules');
-      if (saved) return saved;
-    } catch {}
-    return JSON.stringify(
-      ATRIUM_DEPARA_RULES.map((r) => ({
-        ...r,
-        escopo: (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo') as EscopoType,
-      }))
-    );
-  });
-
-  const [isSavingDepara, setIsSavingDepara] = useState(false);
-  const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
-
-  // Lista de Contas DRE / Orçamento para Sugestão Automática
-  const destinationAccountOptions = useMemo(() => {
-    const set = new Set<string>();
-    ATRIUM_DEPARA_RULES.forEach((r) => {
-      if (r.destino && r.destino !== '-') set.add(r.destino);
-    });
-    ATRIUM_OBRA_ACCOUNTS.forEach((a) => set.add(a));
-    ATRIUM_DRE_LINES.forEach((l) => {
-      if (!l.isGroup) set.add(l.name);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, []);
-
-  const modifiedCount = useMemo(() => {
-    let count = 0;
-    let baselineRules: Array<{ origem: string; destino: string; escopo?: EscopoType }> = [];
-    try {
-      baselineRules = JSON.parse(savedBaseline);
-    } catch {
-      baselineRules = ATRIUM_DEPARA_RULES.map((r) => ({
-        ...r,
-        escopo: (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo') as EscopoType,
-      }));
-    }
-    const baselineMap = new Map(
-      baselineRules.map((r) => [
-        r.origem,
-        { destino: r.destino, escopo: r.escopo || (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo') },
-      ])
-    );
-    deparaRules.forEach((r) => {
-      const base = baselineMap.get(r.origem);
-      const curEscopo = r.escopo || (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo');
-      if (!base || base.destino !== r.destino || base.escopo !== curEscopo) {
-        count++;
-      }
-    });
-    if (deparaRules.length !== baselineRules.length) {
-      count += Math.abs(deparaRules.length - baselineRules.length);
-    }
-    return count;
-  }, [deparaRules, savedBaseline]);
-
-  const hasUnsavedChanges = useMemo(() => {
-    return modifiedCount > 0;
-  }, [modifiedCount]);
-
-  const handleUpdateRule = (index: number, field: 'destino' | 'escopo', value: string) => {
-    setDeparaRules((prev) => {
-      const next = [...prev];
-      const current = next[index];
-      if (field === 'destino') {
-        const autoEscopo = (isConstructionAccount(value) ? 'Custo de Obra' : 'DRE / Corporativo') as EscopoType;
-        next[index] = {
-          ...current,
-          destino: value,
-          // Se o escopo não foi alterado manualmente ou se a conta de destino muda, podemos sugerir o escopo correspondente
-          escopo: current.escopo || autoEscopo,
-        };
-      } else if (field === 'escopo') {
-        next[index] = {
-          ...current,
-          escopo: value as EscopoType,
-        };
-      }
-      return next;
-    });
-  };
-
-  const handleAddRule = () => {
-    setDeparaRules((prev) => [
-      { origem: `Conta ERP Adicional #${prev.length + 1}`, destino: 'Salários - Obra', escopo: 'Custo de Obra' },
-      ...prev,
-    ]);
-  };
-
-  const handleRemoveRule = (index: number) => {
-    setDeparaRules((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSaveDepara = () => {
-    setIsSavingDepara(true);
-    try {
-      const json = JSON.stringify(deparaRules);
-      localStorage.setItem('atrium_custom_depara_rules', json);
-      setSavedBaseline(json);
-      logAudit(
-        'UPDATE_DEPARA_MATRIX',
-        'atrium_depara',
-        currentWork?.id || 'work-1',
-        `Matriz De-Para salva pelo gestor com ${deparaRules.length} regras vinculadas.`
-      );
-      setSaveSuccessMessage(
-        hasUnsavedChanges
-          ? 'Matriz De-Para salva com sucesso no sistema!'
-          : 'Matriz De-Para confirmada e sincronizada com sucesso!'
-      );
-      setTimeout(() => setSaveSuccessMessage(null), 3500);
-    } catch (e) {
-      console.error('Error saving custom depara rules', e);
-    } finally {
-      setIsSavingDepara(false);
-    }
-  };
-
-  const handleDiscardChanges = () => {
-    try {
-      setDeparaRules(JSON.parse(savedBaseline));
-    } catch {
-      setDeparaRules(
-        ATRIUM_DEPARA_RULES.map((r) => ({
-          ...r,
-          escopo: (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo') as EscopoType,
-        }))
-      );
-    }
-  };
-
-  const handleRestoreDefault = () => {
-    if (window.confirm('Deseja restaurar as 115 regras de De-Para originais da planilha oficial?')) {
-      const defaults = ATRIUM_DEPARA_RULES.map((r) => ({
-        ...r,
-        escopo: (isConstructionAccount(r.destino) ? 'Custo de Obra' : 'DRE / Corporativo') as EscopoType,
-      }));
-      setDeparaRules(defaults);
-    }
-  };
-
-  // Filtragem do De-Para
-  const [deparaSearch, setDeparaSearch] = useState('');
-  const filteredDeparaWithIndex = useMemo(() => {
-    const list = deparaRules.map((r, i) => ({ ...r, originalIndex: i }));
-    if (!deparaSearch.trim()) return list;
-    const q = deparaSearch.toLowerCase();
-    return list.filter(
-      (r) =>
-        r.origem.toLowerCase().includes(q) ||
-        r.destino.toLowerCase().includes(q) ||
-        (r.escopo && r.escopo.toLowerCase().includes(q))
-    );
-  }, [deparaRules, deparaSearch]);
 
   const summary = ATRIUM_DRE_SUMMARY;
 
@@ -550,18 +367,6 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
           </button>
 
           <button
-            onClick={() => setActiveSubTab('depara')}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeSubTab === 'depara'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            <span>Matriz De-Para (86 Contas Mapeadas)</span>
-          </button>
-
-          <button
             onClick={() => setActiveSubTab('indicadores')}
             className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
               activeSubTab === 'indicadores'
@@ -798,257 +603,11 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         </div>
       )}
 
-      {/* SUB-ABA 2: MATRIZ DE-PARA E CLASSIFICAÇÃO DE CONTAS */}
-      {activeSubTab === 'depara' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Card Explicativo: Contas de Obra vs Contas da DRE */}
-            <div className="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="flex items-center space-x-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Contas Exclusivas do Orçamento da Obra ({ATRIUM_OBRA_ACCOUNTS.length} Contas)</span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                Estas 47 contas compõem o <strong>Custo de Obra / Orçamento Técnico de Engenharia (R$ 25.705.359,47)</strong>, vinculadas diretamente às 23 etapas da EAP.
-              </p>
-              <div className="max-h-48 overflow-y-auto space-y-1 pr-2 pt-1">
-                {ATRIUM_OBRA_ACCOUNTS.map((acc, idx) => (
-                  <div key={idx} className="text-[11px] px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40">
-                    {acc}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Card Explicativo: Contas que NÃO Entram na Obra */}
-            <div className="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="flex items-center space-x-2 text-xs font-bold text-amber-600 dark:text-amber-400">
-                <Info className="w-4 h-4" />
-                <span>Contas que NÃO Participam da Obra (Exclusivas da DRE / Resultado)</span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                Não entram no custo de engenharia: Receitas de vendas, impostos de faturamento (PIS, COFINS, IRPJ, CSLL), comissões de corretores, publicidade, honorários advocatícios e despesas corporativas da sede.
-              </p>
-              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                <div>• <strong>Receitas:</strong> Venda de Unidades (VGV R$ 55,2M)</div>
-                <div>• <strong>Deduções Tributárias:</strong> PIS, COFINS, CSLL, IRPJ, Distratos</div>
-                <div>• <strong>Despesas Comerciais & MKT:</strong> Campanhas, Publicidade, Stand Conservação</div>
-                <div>• <strong>Comissões:</strong> Corretores de Imóveis</div>
-                <div>• <strong>Administração Central:</strong> Tarifas Bancárias, Multas Sede, Diretoria</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Datalist com Todas as Opções Oficiais de Contas para Autocompletar */}
-          <datalist id="dre-destination-accounts">
-            {destinationAccountOptions.map((opt, i) => (
-              <option key={i} value={opt} />
-            ))}
-          </datalist>
-
-          {/* Tabela da Matriz De-Para Completa com Edição na Hora */}
-          <div className="glass-card rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden space-y-0 shadow-lg">
-            {/* Header do Card */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Matriz De-Para: Lançamento Bruto ERP → Conta Ajustada DRE / Obra
-                  </h3>
-                  {hasUnsavedChanges && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
-                      {modifiedCount} {modifiedCount === 1 ? 'alteração pendente' : 'alterações pendentes'}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Mapeamento interativo que unifica os 5.635 lançamentos contábeis nas 86 contas sintéticas da DRE. Você pode editar qualquer conta na hora e salvar ao final.
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-2.5">
-                <button
-                  onClick={handleAddRule}
-                  className="px-3 py-1.5 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
-                  title="Adicionar uma nova regra de mapeamento de conta do ERP"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Nova Regra</span>
-                </button>
-
-                <div className="relative min-w-[240px]">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={deparaSearch}
-                    onChange={(e) => setDeparaSearch(e.target.value)}
-                    placeholder="Filtrar origem ou destino..."
-                    className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Tabela de Regras com Edição em Tempo Real */}
-            <div className="max-h-[520px] overflow-y-auto">
-              <table className="w-full text-left text-xs text-slate-800 dark:text-slate-300">
-                <thead className="bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
-                  <tr>
-                    <th className="p-3 w-12 text-center">#</th>
-                    <th className="p-3 w-2/5">Conta de Origem no ERP (Extrato)</th>
-                    <th className="p-3 w-2/5">Conta Ajustada DRE / Orçamento (Editável)</th>
-                    <th className="p-3 text-center w-48">Tipo de Escopo (Editável)</th>
-                    <th className="p-3 w-12 text-center">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
-                  {filteredDeparaWithIndex.map((rule) => {
-                    const currentEscopo = rule.escopo || (isConstructionAccount(rule.destino) ? 'Custo de Obra' : 'DRE / Corporativo');
-                    const isObra = currentEscopo === 'Custo de Obra';
-
-                    return (
-                      <tr key={rule.originalIndex} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                        <td className="p-3 text-slate-400 text-[10px] text-center font-mono">
-                          {rule.originalIndex + 1}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className="font-mono text-xs text-slate-800 dark:text-slate-200 select-all font-medium"
-                            title="Conta de origem no ERP (Extrato) - Fixa / Não editável"
-                          >
-                            {rule.origem}
-                          </span>
-                        </td>
-                        <td className="p-2.5">
-                          <div className="relative flex items-center w-full">
-                            <input
-                              type="text"
-                              list="dre-destination-accounts"
-                              value={rule.destino}
-                              onChange={(e) => handleUpdateRule(rule.originalIndex, 'destino', e.target.value)}
-                              className="w-full font-semibold text-xs text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-950/50 focus:bg-white dark:focus:bg-slate-900 border border-blue-200/80 dark:border-blue-800/40 focus:border-blue-500 rounded-lg pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer"
-                              placeholder="Selecione ou digite a conta de destino..."
-                              title="Altere na hora a conta de destino ajustada para a DRE e Obra"
-                            />
-                            <ChevronDown className="w-3.5 h-3.5 text-blue-500 absolute right-2 pointer-events-none opacity-60" />
-                          </div>
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <div className="inline-flex items-center justify-center">
-                            <select
-                              value={currentEscopo}
-                              onChange={(e) => handleUpdateRule(rule.originalIndex, 'escopo', e.target.value)}
-                              className={`text-[11px] font-bold rounded-full px-3 py-1 cursor-pointer border shadow-sm outline-none transition-all ${
-                                isObra
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-200/80 dark:hover:bg-emerald-900/60'
-                                  : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-300 dark:border-purple-700 hover:bg-purple-200/80 dark:hover:bg-purple-900/60'
-                              }`}
-                              title="Clique para alterar o Tipo de Escopo desta regra"
-                            >
-                              <option value="Custo de Obra" className="bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 font-bold py-1">
-                                ● Custo de Obra
-                              </option>
-                              <option value="DRE / Corporativo" className="bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-400 font-bold py-1">
-                                ● DRE / Corporativo
-                              </option>
-                            </select>
-                          </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => handleRemoveRule(rule.originalIndex)}
-                            className="p-1 text-slate-400 hover:text-red-500 transition-colors rounded-md hover:bg-red-500/10"
-                            title="Excluir regra de mapeamento"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredDeparaWithIndex.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-slate-400 text-xs">
-                        Nenhuma regra De-Para encontrada para o termo "{deparaSearch}".
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* RODAPÉ DO CARD COM AÇÕES E BOTÃO DE SALVAR (SOLICITADO PELO USUÁRIO) */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                  Total: <strong>{deparaRules.length}</strong> regras mapeadas
-                </span>
-
-                {hasUnsavedChanges ? (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-500 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>{modifiedCount} {modifiedCount === 1 ? 'alteração não salva' : 'alterações não salvas'}</span>
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Todas as alterações salvas</span>
-                  </span>
-                )}
-
-                <button
-                  onClick={handleRestoreDefault}
-                  className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                  title="Restaurar valores de fábrica da planilha oficial"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Restaurar Padrão Oficial</span>
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-2.5 justify-end">
-                {saveSuccessMessage && (
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 animate-in fade-in">
-                    <Check className="w-4 h-4 text-emerald-500" />
-                    <span>{saveSuccessMessage}</span>
-                  </span>
-                )}
-
-                {hasUnsavedChanges && (
-                  <button
-                    onClick={handleDiscardChanges}
-                    className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    Descartar
-                  </button>
-                )}
-
-                <button
-                  onClick={handleSaveDepara}
-                  disabled={isSavingDepara}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md ${
-                    hasUnsavedChanges
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/25 cursor-pointer transform hover:-translate-y-0.5'
-                      : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-sm'
-                  }`}
-                  title="Salvar matriz De-Para atualizada no sistema"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{isSavingDepara ? 'Salvando...' : 'Salvar Matriz De-Para'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUB-ABA 3: INDICADORES DO EMPREENDIMENTO (VGV / CUB) - ORÇADO VS. REAL */}
+      {/* SUB-ABA: INDICADORES DO EMPREENDIMENTO (VGV / CUB) - ORÇADO VS. REAL */}
       {activeSubTab === 'indicadores' && (() => {
         // Indicadores do Empreendimento: Orçado vs. Real (Performance da Obra)
         const totalUnits = currentWork?.total_units || 80;
         const unitsSold = currentWork?.units_sold !== undefined ? currentWork.units_sold : 64;
-        const unitsAvailable = Math.max(0, totalUnits - unitsSold);
         const salesPercent = totalUnits > 0 ? (unitsSold / totalUnits) * 100 : 80;
 
         const privateArea = currentWork?.private_area_m2 || 4840.0;
@@ -1063,20 +622,28 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         const executedPrivateArea = privateArea * (progressPercent / 100);
         const executedConstructedArea = constructedArea * (progressPercent / 100);
 
-        // 1. VGV (Valor Geral de Vendas)
+        // 1. VGV (Valor Geral de Vendas) - Conforme especificação:
+        // VGV real = valor vendido até o momento + valor de unidades em estoque
         const vgvOrcado = summary.receita.orcadoBruto; // R$ 55.206.000,00
-        const vgvVendido = currentWork?.vgv_sold || 44164800.0; // R$ 44.164.800,00 (80%)
-        const vgvRealizadoFaturado = summary.receita.realizadoBruto; // R$ 4.789.007,29 (8,68%)
-        const vgvDisponivel = Math.max(0, vgvOrcado - vgvVendido); // R$ 11.041.200,00 (20%)
+        const vgvVendido = currentWork?.vgv_sold || 44164800.0; // R$ 44.164.800,00 (Vendido até o momento)
+        const unitsAvailable = 12; // Unidades disponíveis para venda
+        const unitsBlocked = 4; // Unidades bloqueadas para venda
+        const unitsStock = unitsAvailable + unitsBlocked; // 16 unidades em estoque
+        const vgvEstoque = 11041200.0; // R$ 11.041.200,00 (12 un. disponíveis R$ 8.280.900 + 4 un. bloqueadas R$ 2.760.300)
+        const vgvReal = vgvVendido + vgvEstoque; // R$ 55.206.000,00 (Vendido + Estoque)
+        const vgvRealizadoFaturado = summary.receita.realizadoBruto; // R$ 4.789.007,29 (Recebido até o momento na DRE)
+        const vgvAReceber = vgvVendido - vgvRealizadoFaturado; // R$ 39.375.792,71 (Valores a receber das vendas)
 
-        // 2. Preço Médio por m²
+        // 2. Preço Médio por m² - Conforme especificação:
+        // Preço médio do m² = valor vendido dividido pela metragem vendida
+        const metragemVendida = 3872.0; // 64 un. vendidas * 60,5 m² médio
+        const precoMedioM2Vendido = metragemVendida > 0 ? vgvVendido / metragemVendida : 11406.2; // R$ 11.406,20 /m² priv.
         const precoM2PrivativoOrcado = privateArea > 0 ? vgvOrcado / privateArea : 11406.2; // R$ 11.406,20 /m²
         const precoM2ConstruidoOrcado = constructedArea > 0 ? vgvOrcado / constructedArea : 8059.27; // R$ 8.059,27 /m²
-        const soldPrivateArea = totalUnits > 0 ? privateArea * (unitsSold / totalUnits) : 3872.0;
-        const precoM2PrivativoRealVendido = soldPrivateArea > 0 ? vgvVendido / soldPrivateArea : 11406.2; // R$ 11.406,20 /m²
-        const precoM2ConstruidoRealVendido = (constructedArea * (unitsSold / totalUnits)) > 0 ? vgvVendido / (constructedArea * (unitsSold / totalUnits)) : 8059.27; // R$ 8.059,27 /m²
-        const receitaFaturadaPorM2Executado = executedPrivateArea > 0 ? vgvRealizadoFaturado / executedPrivateArea : 2140.77; // R$ 2.140,77 /m²
-        const ticketMedioVendido = unitsSold > 0 ? vgvVendido / unitsSold : 690075.0; // R$ 690.075,00
+        const soldConstructedArea = (constructedArea * (unitsSold / totalUnits));
+        const precoM2ConstruidoRealVendido = soldConstructedArea > 0 ? vgvVendido / soldConstructedArea : 8059.27;
+        const receitaFaturadaPorM2Executado = executedPrivateArea > 0 ? vgvRealizadoFaturado / executedPrivateArea : 2140.77;
+        const ticketMedioVendido = unitsSold > 0 ? vgvVendido / unitsSold : 690075.0;
 
         // 3. Custo de Obra & CUB
         const custoObraOrcado = summary.custoObra.orcado; // R$ 25.705.359,47
@@ -1140,12 +707,12 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
 
             {/* 4 CARDS PRINCIPAIS: VGV, PREÇO M², CUSTO OBRA/CUB E MARGEM */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Card 1: VGV e Comercialização */}
+              {/* Card 1: VGV Real (Vendido + Estoque) */}
               <div className="glass-card p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden bg-gradient-to-br from-sky-500/5 to-transparent space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Home className="w-3.5 h-3.5 text-sky-500" />
-                    <span>1. VGV e Comercialização</span>
+                    <span>1. VGV Real (Vendido + Estoque)</span>
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
                     {formatPercent(salesPercent, 0)} Vendido
@@ -1154,10 +721,10 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
 
                 <div>
                   <div className="text-xl font-black text-slate-900 dark:text-white">
-                    {formatBRL(vgvVendido)}
+                    {formatBRL(vgvReal)}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    VGV Orçado Total: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(vgvOrcado)}</strong>
+                    Vendido: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(vgvVendido)}</strong> + Estoque: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(vgvEstoque)}</strong>
                   </div>
                 </div>
 
@@ -1175,17 +742,21 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                     />
                   </div>
                   <div className="flex items-center justify-between text-[11px] pt-1">
-                    <span className="text-slate-500">Faturamento Realizado (DRE):</span>
-                    <strong className="text-sky-600 dark:text-sky-400 font-mono">{formatBRL(vgvRealizadoFaturado)}</strong>
+                    <span className="text-slate-500">Unidades em Estoque ({unitsStock} un.):</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">{unitsAvailable} disp. | {unitsBlocked} bloq.</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Recebido até o Momento (DRE):</span>
+                    <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{formatBRL(vgvRealizadoFaturado)}</strong>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400">
-                    <span>Saldo a Vender ({unitsAvailable} un.):</span>
-                    <span className="font-mono">{formatBRL(vgvDisponivel)}</span>
+                    <span>Valores a Receber das Vendas:</span>
+                    <span className="font-mono text-sky-600 dark:text-sky-400 font-semibold">{formatBRL(vgvAReceber)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Card 2: Preço Médio do m² */}
+              {/* Card 2: Preço Médio do m² (Valor Vendido ÷ Metragem Vendida) */}
               <div className="glass-card p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden bg-gradient-to-br from-blue-500/5 to-transparent space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1193,34 +764,40 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                     <span>2. Preço Médio do m²</span>
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
-                    100% da Tabela
+                    Vendido ÷ Metragem
                   </span>
                 </div>
 
                 <div>
                   <div className="text-xl font-black text-blue-600 dark:text-blue-400">
-                    {formatBRL(precoM2PrivativoRealVendido)} <span className="text-xs font-normal text-slate-400">/m² priv.</span>
+                    {formatBRL(precoMedioM2Vendido)} <span className="text-xs font-normal text-slate-400">/m² priv.</span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    Orçado Tabela: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(precoM2PrivativoOrcado)} /m²</strong>
+                    Fórmula: <strong className="text-slate-700 dark:text-slate-300">Vendido ÷ Metragem Vendida</strong>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">Preço p/ m² Construído:</span>
-                    <strong className="text-slate-800 dark:text-slate-200 font-mono">{formatBRL(precoM2ConstruidoRealVendido)} /m²</strong>
+                    <span className="text-slate-500">Cálculo Exato:</span>
+                    <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300">
+                      R$ 44,16M ÷ {metragemVendida.toLocaleString('pt-BR')} m²
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Orçado Estudo de Viabilidade:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 font-mono">{formatBRL(precoM2PrivativoOrcado)} /m²</span>
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-slate-500">Ticket Médio Vendido:</span>
                     <span className="font-bold text-blue-600 dark:text-blue-400 font-mono">{formatBRL(ticketMedioVendido)}</span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60">
-                    <span>Faturado / m² Executado:</span>
-                    <span className="font-mono text-slate-400">{formatBRL(receitaFaturadaPorM2Executado)} /m²</span>
+                    <span>Preço p/ m² Construído:</span>
+                    <span className="font-mono text-slate-400">{formatBRL(precoM2ConstruidoRealVendido)} /m²</span>
                   </div>
                   <div className="text-[10px] text-slate-500">
-                    Área Privativa Total: {privateArea.toLocaleString('pt-BR')} m² (80 unidades)
+                    Metragem Vendida: {metragemVendida.toLocaleString('pt-BR')} m² (64 un.) de {privateArea.toLocaleString('pt-BR')} m²
                   </div>
                 </div>
               </div>
@@ -1372,7 +949,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                       </td>
                       <td className="p-3.5 text-slate-500 text-[11px]">R$/m² privativo</td>
                       <td className="p-3.5 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatBRL(precoM2PrivativoOrcado)}</td>
-                      <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBRL(precoM2PrivativoRealVendido)}</td>
+                      <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBRL(precoMedioM2Vendido)}</td>
                       <td className="p-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400">
                         0,00% (100% da tabela)
                       </td>

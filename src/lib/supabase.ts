@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = (import.meta.env?.VITE_SUPABASE_URL as string) || '';
+const rawUrl = ((import.meta as any).env?.VITE_SUPABASE_URL as string) || '';
 const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
-const supabaseAnonKey = (import.meta.env?.VITE_SUPABASE_ANON_KEY as string) || '';
+const supabaseAnonKey = ((import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string) || '';
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(
@@ -34,28 +34,31 @@ export function logAudit(action: string, entity: string, entity_id?: string, det
 
     // Se o Supabase estiver configurado, envia de forma não bloqueante para a tabela de trilha de auditoria
     if (supabase) {
-      supabase
-        .from('audit_logs')
-        .insert({
-          action,
-          entity,
-          entity_id,
-          details: details ? { message: details } : {},
-          performed_at: newLog.timestamp,
-        })
-        .then(({ error }) => {
+      Promise.resolve(
+        supabase
+          .from('audit_logs')
+          .insert({
+            action,
+            entity,
+            entity_id,
+            details: details ? { message: details } : {},
+            performed_at: newLog.timestamp,
+          })
+      )
+        .then(({ error }: any) => {
           if (error) {
             // Caso a tabela tenha o nome em português no schema
-            supabase
-              .from('trilha_auditoria_logs')
-              .insert({
-                acao: action,
-                entidade: entity,
-                registro_id: entity_id,
-                detalhes: details ? { message: details } : {},
-                criado_em: newLog.timestamp,
-              })
-              .then(() => {});
+            Promise.resolve(
+              supabase
+                .from('trilha_auditoria_logs')
+                .insert({
+                  acao: action,
+                  entidade: entity,
+                  registro_id: entity_id,
+                  detalhes: details ? { message: details } : {},
+                  criado_em: newLog.timestamp,
+                })
+            ).catch(() => {});
           }
         })
         .catch(() => {});

@@ -15,6 +15,7 @@ import { DeParaManager } from '../depara/DeParaManager';
 import { PhysicalProgressManager } from '../physical/PhysicalProgressManager';
 import { FinancialProgressManager } from '../financial/FinancialProgressManager';
 import { IntegratedProgressView } from '../integrated/IntegratedProgressView';
+import { CommercialPage } from '../commercial/CommercialPage';
 
 export const AppLayout: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
@@ -27,17 +28,18 @@ export const AppLayout: React.FC = () => {
     works: { title: 'Cadastro e Gestão de Obras', breadcrumb: 'Empreendimentos' },
     work_detail: { title: 'Painel da Obra', breadcrumb: 'Obras' },
     physical: { title: 'Acompanhamento Físico de Obras (Plano A)', breadcrumb: 'Engenharia de Campo' },
-    financial: { title: 'Acompanhamento Financeiro (Plano B)', breadcrumb: 'Custos ERP' },
-    integrated: { title: 'Visão Integrada Físico-Financeira', breadcrumb: 'Auditoria & Gestão' },
-    depara: { title: 'Gestão dos De-Para (Duplo Nível)', breadcrumb: 'Mapeamentos ERP' },
     stages: { title: 'Etapas & Avanço Físico (EAP)', breadcrumb: 'Cronograma' },
     budget: { title: 'Orçamento da Obra & Custos Incorridos', breadcrumb: 'Financeiro & Obra' },
+    commercial: { title: 'Comercial & Gestão de Vendas', breadcrumb: 'Vendas & Recebíveis' },
+    financial: { title: 'Acompanhamento Financeiro (Plano B)', breadcrumb: 'Custos ERP' },
     purchasing: { title: 'Compras & Suprimentos', breadcrumb: 'Suprimentos' },
     labor: { title: 'Mão de Obra & Equipes', breadcrumb: 'Campo' },
     importer: { title: 'Importações de Planilhas ERP', breadcrumb: 'Integrações' },
     reports: { title: 'Relatórios & Exportações', breadcrumb: 'Gerencial' },
-    users: { title: 'Usuários & Permissões', breadcrumb: 'Segurança' },
     settings: { title: 'Configurações do Sistema', breadcrumb: 'Governança' },
+    integrated: { title: 'Visão Integrada Físico-Financeira', breadcrumb: 'Auditoria & Gestão' },
+    depara: { title: 'Gestão dos De-Para (Duplo Nível)', breadcrumb: 'Mapeamentos ERP' },
+    users: { title: 'Usuários & Permissões', breadcrumb: 'Segurança' },
   };
 
   const handleSelectWork = (workId: string) => {
@@ -88,6 +90,7 @@ export const AppLayout: React.FC = () => {
             {(currentTab === 'budget' || currentTab === 'costs') && (
               <BudgetManager selectedWorkId={selectedWorkId || undefined} />
             )}
+            {currentTab === 'commercial' && <CommercialPage />}
             {currentTab === 'purchasing' && <PurchasingPipeline />}
             {currentTab === 'labor' && <LaborManager />}
             {currentTab === 'importer' && <ErpImporterPage />}

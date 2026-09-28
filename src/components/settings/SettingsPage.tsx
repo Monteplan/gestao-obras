@@ -17,15 +17,17 @@ import {
   CheckCircle2,
   Sun,
   Moon,
+  ArrowRightLeft,
   Monitor,
 } from 'lucide-react';
+import { DeParaMatrixSettings } from './DeParaMatrixSettings';
 
 export const SettingsPage: React.FC = () => {
   const { user, role } = useAuth();
   const { auditLogs, resetToSeedData } = useData();
   const { theme, toggleTheme, setTheme } = useTheme();
 
-  const [activeTab, setActiveTab] = useState<'geral' | 'usuarios' | 'auditoria'>('geral');
+  const [activeTab, setActiveTab] = useState<'geral' | 'matriz_depara' | 'usuarios' | 'auditoria'>('geral');
   const [budgetAlertThreshold, setBudgetAlertThreshold] = useState<number>(85);
   const [marginAlertThreshold, setMarginAlertThreshold] = useState<number>(8);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -46,12 +48,12 @@ export const SettingsPage: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Configurações & Governança</h2>
           <p className="text-xs text-slate-400 mt-1">
-            Gestão de perfis de acesso, parâmetros de alerta orçamentário, trilha de auditoria e conexão com o banco.
+            Gestão de perfis de acesso, matriz de-para contábil, parâmetros de alerta e trilha de auditoria.
           </p>
         </div>
 
         {/* Abas */}
-        <div className="flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
+        <div className="flex items-center flex-wrap bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs gap-1">
           <button
             onClick={() => setActiveTab('geral')}
             className={`px-3 py-1.5 rounded-lg font-semibold ${
@@ -59,6 +61,15 @@ export const SettingsPage: React.FC = () => {
             }`}
           >
             Parâmetros & Supabase
+          </button>
+          <button
+            onClick={() => setActiveTab('matriz_depara')}
+            className={`px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 ${
+              activeTab === 'matriz_depara' ? 'bg-[#004171] text-white shadow-md shadow-[#004171]/30' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5" />
+            <span>Matriz De-Para (86 Contas)</span>
           </button>
           <button
             onClick={() => setActiveTab('usuarios')}
@@ -267,6 +278,11 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ABA: MATRIZ DE-PARA (86 CONTAS MAPEADAS) */}
+      {activeTab === 'matriz_depara' && (
+        <DeParaMatrixSettings />
       )}
 
       {/* ABA 2: USUÁRIOS E PERFIS DE ACESSO */}

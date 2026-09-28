@@ -19,6 +19,7 @@ import {
   DollarSign,
   Scale,
   Layers,
+  Home,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,20 +38,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { canAccess } = useAuth();
   const { theme } = useTheme();
 
-  const navItems = [
+  interface NavItem {
+    id: string;
+    label: string;
+    icon: any;
+    module: string;
+    badge?: string;
+    highlight?: boolean;
+  }
+
+  // Menu Oficial estritamente ordenado conforme especificação:
+  // 1. Dashboard Geral, 2. Obras, 3. Acomp. Físico, 4. Etapas & EAP, 5. Orçamento & INCC,
+  // 6. Comercial, 7. Acomp. Financeiro, 8. Compras & suprimento, 9. Mão de obra,
+  // 10. Importação ERP, 11. Relatórios & Exportação, 12. Configurações.
+  const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard Geral', icon: LayoutDashboard, module: 'dashboard' },
     { id: 'works', label: 'Obras', icon: Building2, module: 'works' },
     { id: 'physical', label: 'Acomp. Físico', icon: Ruler, module: 'physical' },
-    { id: 'financial', label: 'Acomp. Financeiro', icon: DollarSign, module: 'financial' },
-    { id: 'integrated', label: 'Visão Integrada', icon: Scale, module: 'integrated' },
-    { id: 'depara', label: 'Gestão De-Para', icon: Layers, module: 'depara' },
     { id: 'stages', label: 'Etapas & EAP', icon: GitFork, module: 'stages' },
     { id: 'budget', label: 'Orçamento & INCC', icon: Calculator, module: 'budget' },
-    { id: 'purchasing', label: 'Compras & Suprimentos', icon: ShoppingCart, module: 'purchasing' },
-    { id: 'labor', label: 'Mão de Obra', icon: Users, module: 'labor', badge: 'Opcional' },
-    { id: 'importer', label: 'Importações ERP', icon: FileSpreadsheet, module: 'importer', highlight: true },
+    { id: 'commercial', label: 'Comercial', icon: Home, module: 'commercial' },
+    { id: 'financial', label: 'Acomp. Financeiro', icon: DollarSign, module: 'financial' },
+    { id: 'purchasing', label: 'Compras & suprimento', icon: ShoppingCart, module: 'purchasing' },
+    { id: 'labor', label: 'Mão de obra', icon: Users, module: 'labor' },
+    { id: 'importer', label: 'Importação ERP', icon: FileSpreadsheet, module: 'importer' },
     { id: 'reports', label: 'Relatórios & Exportação', icon: BarChart3, module: 'reports' },
-    { id: 'users', label: 'Usuários & Perfis', icon: ShieldCheck, module: 'users' },
     { id: 'settings', label: 'Configurações', icon: Settings, module: 'settings' },
   ];
 

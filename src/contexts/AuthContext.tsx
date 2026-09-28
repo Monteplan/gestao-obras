@@ -164,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return ['gestor', 'engenharia', 'admin', 'consulta'].includes(role);
       case 'budget':
       case 'financial':
+      case 'commercial':
       case 'integrated':
         return ['gestor', 'engenharia', 'financeiro', 'admin', 'consulta'].includes(role);
       case 'depara':
