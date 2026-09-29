@@ -3,7 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { UserRole } from '../../types';
-import { Bell, Shield, ChevronDown, LogOut, CheckCircle2, AlertTriangle, Clock, Sun, Moon } from 'lucide-react';
+import { Bell, Shield, ChevronDown, LogOut, CheckCircle2, AlertTriangle, Clock, Sun, Moon, Menu } from 'lucide-react';
+import { useDevice } from '../../contexts/DeviceContext';
+import { DeviceIndicatorBadge } from '../common/DeviceIndicatorBadge';
 
 interface HeaderProps {
   currentTitle: string;
@@ -11,10 +13,11 @@ interface HeaderProps {
   onMenuToggle?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plataforma' }) => {
+export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plataforma', onMenuToggle }) => {
   const { user, role, switchRole, logout } = useAuth();
   const { works, stages, orders } = useData();
   const { theme, toggleTheme } = useTheme();
+  const { isMobileView, toggleSidebarMobile } = useDevice();
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -34,20 +37,44 @@ export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plat
     { value: 'consulta', label: 'Consulta', desc: 'Visualização e relatórios em modo somente leitura' },
   ];
 
+  const handleMobileMenuClick = () => {
+    if (toggleSidebarMobile) {
+      toggleSidebarMobile();
+    } else if (onMenuToggle) {
+      onMenuToggle();
+    }
+  };
+
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-[#1c3e5c] bg-white/95 dark:bg-[#081d2c]/85 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-200">
-      {/* Breadcrumbs e Título da Página */}
-      <div>
-        <div className="flex items-center space-x-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-          <span>{breadcrumb}</span>
-          <span>/</span>
-          <span className="text-[#004171] dark:text-[#38bdf8] font-semibold">{currentTitle}</span>
+    <header className="h-16 border-b border-slate-200 dark:border-[#1c3e5c] bg-white/95 dark:bg-[#081d2c]/85 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 transition-colors duration-200">
+      {/* Botão de Menu Hambúrguer Móvel + Breadcrumbs e Título */}
+      <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
+        {isMobileView && (
+          <button
+            onClick={handleMobileMenuClick}
+            className="p-2 rounded-xl text-slate-700 hover:text-black hover:bg-slate-100 dark:text-slate-200 dark:hover:text-white dark:hover:bg-[#0c2336] transition-colors shrink-0"
+            title="Abrir Menu de Navegação"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+
+        <div className="min-w-0">
+          <div className="hidden sm:flex items-center space-x-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span>{breadcrumb}</span>
+            <span>/</span>
+            <span className="text-[#004171] dark:text-[#38bdf8] font-semibold">{currentTitle}</span>
+          </div>
+          <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight truncate">
+            {currentTitle}
+          </h1>
         </div>
-        <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">{currentTitle}</h1>
       </div>
 
-      {/* Ações da Direita: Troca de Perfil, Alternador de Tema, Alertas e Usuário */}
-      <div className="flex items-center space-x-3">
+      {/* Ações da Direita: Indicador de Dispositivo (Windows / Celular), Tema, Perfil e Notificações */}
+      <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
+        {/* Badge Inteligente de Identificação de Dispositivo (Windows x Celular) */}
+        <DeviceIndicatorBadge compact={isMobileView} />
         {/* Alternador de Tema Claro / Escuro */}
         <button
           onClick={toggleTheme}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useDevice } from '../../contexts/DeviceContext';
 import { INITIAL_PROFILES } from '../../lib/seed-data';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { formatDateBR } from '../../lib/utils';
@@ -19,6 +20,9 @@ import {
   Moon,
   ArrowRightLeft,
   Monitor,
+  Smartphone,
+  Laptop,
+  Sparkles,
 } from 'lucide-react';
 import { DeParaMatrixSettings } from './DeParaMatrixSettings';
 
@@ -26,6 +30,7 @@ export const SettingsPage: React.FC = () => {
   const { user, role } = useAuth();
   const { auditLogs, resetToSeedData } = useData();
   const { theme, toggleTheme, setTheme } = useTheme();
+  const { device, simulatedDevice, setSimulatedDevice, isMobileView } = useDevice();
 
   const [activeTab, setActiveTab] = useState<'geral' | 'matriz_depara' | 'usuarios' | 'auditoria'>('geral');
   const [budgetAlertThreshold, setBudgetAlertThreshold] = useState<number>(85);
@@ -170,6 +175,122 @@ export const SettingsPage: React.FC = () => {
                   </p>
                 </div>
               </button>
+            </div>
+          </div>
+
+          {/* Card Detecção de Dispositivo & Visualização Responsiva (Windows / Celular) */}
+          <div className="glass-card rounded-2xl border border-slate-800 p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                {device.isWindows ? (
+                  <Laptop className="w-5 h-5 text-blue-400" />
+                ) : (
+                  <Smartphone className="w-5 h-5 text-emerald-400" />
+                )}
+                <div>
+                  <h3 className="text-sm font-bold text-white">Identificação do Dispositivo & Plataforma de Acesso</h3>
+                  <p className="text-[11px] text-slate-400">
+                    O sistema identifica em tempo real se o acesso partiu do Windows Desktop ou de um Celular (Android/iOS) e adapta a interface.
+                  </p>
+                </div>
+              </div>
+              <span className={`text-xs px-3 py-1 rounded-full font-bold border ${
+                device.isWindows
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {device.deviceSummary}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-xs">
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Sistema Operacional</span>
+                <span className="font-bold text-white text-sm mt-0.5 block">
+                  {device.isWindows ? '💻 Windows' : device.isAndroid ? '🤖 Android' : device.isIOS ? '🍎 iOS / iPhone' : device.osName}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Tipo de Aparelho</span>
+                <span className="font-bold text-white text-sm mt-0.5 block capitalize">
+                  {device.isMobile ? '📱 Celular' : device.isTablet ? '📟 Tablet' : '🖥️ Computador'}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Navegador</span>
+                <span className="font-bold text-white text-sm mt-0.5 block truncate">
+                  {device.browserName}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Resolução de Tela</span>
+                <span className="font-bold text-white text-sm mt-0.5 block">
+                  {device.screenWidth} × {device.screenHeight} px
+                </span>
+              </div>
+            </div>
+
+            {/* Alternador de Modo de Exibição */}
+            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-white block">Modo de Visualização da Interface</span>
+                  <span className="text-[11px] text-slate-400">
+                    Você pode forçar a simulação do layout de celular para testar ou manter a adaptação automática padrão.
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSimulatedDevice('auto')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                      simulatedDevice === 'auto'
+                        ? 'bg-[#004171] text-white shadow-md'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Automático</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSimulatedDevice('mobile')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                      simulatedDevice === 'mobile'
+                        ? 'bg-[#004171] text-white shadow-md'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>Celular</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSimulatedDevice('desktop')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                      simulatedDevice === 'desktop'
+                        ? 'bg-[#004171] text-white shadow-md'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    <Laptop className="w-3.5 h-3.5" />
+                    <span>Desktop</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 flex items-center justify-between">
+                <span>Estado Vigente da Interface:</span>
+                <span className="font-bold text-white">
+                  {isMobileView ? '📱 Interface Compacta Otimizada para Celular (Gaveta + Bottom Nav)' : '💻 Interface Executiva Panorâmica para Windows / Desktop'}
+                </span>
+              </div>
             </div>
           </div>
 

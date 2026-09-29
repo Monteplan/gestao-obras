@@ -16,8 +16,11 @@ import { PhysicalProgressManager } from '../physical/PhysicalProgressManager';
 import { FinancialProgressManager } from '../financial/FinancialProgressManager';
 import { IntegratedProgressView } from '../integrated/IntegratedProgressView';
 import { CommercialPage } from '../commercial/CommercialPage';
+import { MobileBottomNav } from './MobileBottomNav';
+import { useDevice } from '../../contexts/DeviceContext';
 
 export const AppLayout: React.FC = () => {
+  const { isMobileView, setSidebarOpenMobile } = useDevice();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
@@ -75,7 +78,7 @@ export const AppLayout: React.FC = () => {
           onMenuToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <main className={`flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 lg:p-8 ${isMobileView ? 'pb-24' : 'pb-8'}`}>
           <div className="max-w-7xl mx-auto">
             {currentTab === 'dashboard' && <OverviewDashboard onSelectWork={handleSelectWork} />}
             {currentTab === 'works' && <WorksListPage onSelectWork={handleSelectWork} />}
@@ -98,6 +101,16 @@ export const AppLayout: React.FC = () => {
             {(currentTab === 'users' || currentTab === 'settings') && <SettingsPage />}
           </div>
         </main>
+
+        {/* Barra de Navegação Inferior Fixa para Celular */}
+        <MobileBottomNav
+          currentTab={currentTab === 'work_detail' ? 'works' : currentTab}
+          onSelectTab={(tab) => {
+            setSelectedWorkId(null);
+            setCurrentTab(tab);
+          }}
+          onOpenMenu={() => setSidebarOpenMobile(true)}
+        />
       </div>
     </div>
   );

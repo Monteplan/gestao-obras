@@ -2,6 +2,7 @@ import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { DeviceProvider } from './contexts/DeviceContext';
 import { LoginPage } from './components/auth/LoginPage';
 import { AppLayout } from './components/layout/AppLayout';
 
@@ -36,7 +37,9 @@ export function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <MainContent />
+        <DeviceProvider>
+          <MainContent />
+        </DeviceProvider>
       </AuthProvider>
     </ThemeProvider>
   );

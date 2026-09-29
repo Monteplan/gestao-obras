@@ -649,3 +649,15 @@ html.light ::-webkit-scrollbar-thumb:hover {
   filter: brightness(0.85) contrast(1.2) hue-rotate(190deg) saturate(1.5) !important;
 }
 
+/* Mobile Optimization & Safe Area utilities */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0.5rem));
+}
+
+@media (max-width: 768px) {
+  .mobile-touch-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+}
+

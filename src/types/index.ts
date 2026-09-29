@@ -892,3 +892,25 @@ export interface PcoParsedData {
   commercial_data: WorkCommercialData;
 }
 
+export type PlatformOS = 'windows' | 'android' | 'ios' | 'macos' | 'linux' | 'other';
+export type DeviceType = 'mobile' | 'tablet' | 'desktop';
+
+export interface DeviceInfo {
+  deviceType: DeviceType;
+  os: PlatformOS;
+  osName: string;
+  browserName: string;
+  isMobile: boolean;
+  isTablet: boolean;
+  isDesktop: boolean;
+  isWindows: boolean;
+  isAndroid: boolean;
+  isIOS: boolean;
+  isTouch: boolean;
+  orientation: 'portrait' | 'landscape';
+  screenWidth: number;
+  screenHeight: number;
+  deviceSummary: string;
+  userAgent: string;
+}
+
