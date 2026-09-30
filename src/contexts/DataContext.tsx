@@ -48,8 +48,16 @@ import {
 } from '../lib/seed-data';
 import { calculateWeightedProgress, calculatePhysicalProgressWeighted, simulateInccAdjustment, formatBRL } from '../lib/utils';
 import { useAuth } from './AuthContext';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { fetchAllFromSupabase, saveImportedEntriesToSupabase } from '../lib/supabase-sync';
 
 interface DataContextType {
+  // Supabase Cloud Sync Status
+  isSyncingWithSupabase: boolean;
+  supabaseSyncStatus: 'synced' | 'local' | 'syncing' | 'error';
+  lastSyncedAt: string | null;
+  syncWithSupabase: () => Promise<void>;
+
   works: Work[];
   stages: Stage[];
   budgetVersions: BudgetVersion[];
@@ -221,6 +229,61 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [erpToBudgetTotalizerMappings, setErpToBudgetTotalizerMappings] = useState<ErpToBudgetTotalizerMapping[]>(() => loadInitial('erp_to_budget_totalizer_mappings', INITIAL_DE_PARA_2));
   const [physicalProgressEntries, setPhysicalProgressEntries] = useState<PhysicalProgressEntry[]>(() => loadInitial('physical_progress_entries', INITIAL_PHYSICAL_PROGRESS_ENTRIES));
   const [inccAdjustments, setInccAdjustments] = useState<BudgetIndexAdjustment[]>(() => loadInitial('incc_adjustments', []));
+
+  // Estados de Sincronização com Supabase Cloud
+  const [isSyncingWithSupabase, setIsSyncingWithSupabase] = useState<boolean>(false);
+  const [supabaseSyncStatus, setSupabaseSyncStatus] = useState<'synced' | 'local' | 'syncing' | 'error'>(
+    isSupabaseConfigured() ? 'syncing' : 'local'
+  );
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  const syncWithSupabase = async () => {
+    if (!isSupabaseConfigured()) {
+      setSupabaseSyncStatus('local');
+      return;
+    }
+    setIsSyncingWithSupabase(true);
+    setSupabaseSyncStatus('syncing');
+    try {
+      const result = await fetchAllFromSupabase();
+      if (result) {
+        if (result.works.length > 0) {
+          setWorks(prev => {
+            const others = prev.filter(w => w.code !== 'OBR-001' && w.id !== 'work-1');
+            return [result.works[0], ...others];
+          });
+        }
+        if (result.incurredCosts.length > 0) {
+          setIncurredCosts(result.incurredCosts);
+        }
+        if (result.revenues.length > 0) {
+          setRevenues(result.revenues);
+        }
+        if (result.budgetAccounts.length > 0) {
+          setBudgetAccounts(result.budgetAccounts);
+        }
+        if (result.erpToBudgetTotalizerMappings.length > 0) {
+          setErpToBudgetTotalizerMappings(result.erpToBudgetTotalizerMappings);
+        }
+        setSupabaseSyncStatus('synced');
+        setLastSyncedAt(result.meta.syncedAt);
+      } else {
+        setSupabaseSyncStatus('local');
+      }
+    } catch (err) {
+      console.warn('Erro ao sincronizar com Supabase:', err);
+      setSupabaseSyncStatus('error');
+    } finally {
+      setIsSyncingWithSupabase(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSupabaseConfigured()) {
+      syncWithSupabase();
+    }
+  }, []);
+
 
   // Sincronização automática com localStorage versionado
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_works`, JSON.stringify(works)); }, [works]);
@@ -872,6 +935,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setIncurredCosts(prev => [...newCosts, ...prev]);
       }
+
+      // Persistência em nuvem se o Supabase estiver configurado
+      if (newCosts.length > 0 && isSupabaseConfigured()) {
+        const dbRows = newCosts.map(c => ({
+          document_number: c.document_number,
+          cost_account_name: c.erp_account_code || c.category || 'Despesa Geral',
+          entry_date: c.date,
+          supplier_contractor_name: c.supplier_name,
+          entry_description: c.description,
+          amount: c.net_value,
+          nature_classification: 'custo_obra',
+          adjusted_consolidated_account: c.erp_account_code || 'OUTROS',
+          external_entry_id: c.external_id,
+        }));
+        saveImportedEntriesToSupabase(dbRows, batchId).then(res => {
+          if (res.success) {
+            console.log(`[DataContext] ${res.insertedCount} novos lançamentos foram persistidos no Supabase.`);
+          }
+        }).catch(err => {
+          console.error('[DataContext] Erro ao persistir importação no Supabase:', err);
+        });
+      }
     } else if (type === 'works') {
       const newWorksList: Work[] = [];
       rows.forEach((row, idx) => {
@@ -1228,6 +1313,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateLaborEntryStatus,
         processErpImport,
         resetToSeedData,
+        isSyncingWithSupabase,
+        supabaseSyncStatus,
+        lastSyncedAt,
+        syncWithSupabase,
       }}
     >
       {children}

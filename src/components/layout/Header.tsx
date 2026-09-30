@@ -6,6 +6,7 @@ import { UserRole } from '../../types';
 import { Bell, Shield, ChevronDown, LogOut, CheckCircle2, AlertTriangle, Clock, Sun, Moon, Menu } from 'lucide-react';
 import { useDevice } from '../../contexts/DeviceContext';
 import { DeviceIndicatorBadge } from '../common/DeviceIndicatorBadge';
+import { DatabaseIndicatorBadge } from '../common/DatabaseIndicatorBadge';
 
 interface HeaderProps {
   currentTitle: string;
@@ -75,6 +76,8 @@ export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plat
       <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
         {/* Badge Inteligente de Identificação de Dispositivo (Windows x Celular) */}
         <DeviceIndicatorBadge compact={isMobileView} />
+        {/* Badge de Conexão com Banco de Dados / Supabase */}
+        <DatabaseIndicatorBadge compact={isMobileView} />
         {/* Alternador de Tema Claro / Escuro */}
         <button
           onClick={toggleTheme}
