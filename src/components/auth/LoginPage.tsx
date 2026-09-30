@@ -7,8 +7,8 @@ export const LoginPage: React.FC = () => {
   const { login, requestAccess, recoverPasswordStep1, recoverPasswordStep2, recoverPasswordStep3 } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('admin@monteplan.com.br');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');

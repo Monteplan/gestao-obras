@@ -25,39 +25,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Carrega sessão salva ou inicializa com admin para conveniência no primeiro load
+  // Sempre exige autenticação na tela de login ao entrar na aplicação
   useEffect(() => {
-    const savedUser = localStorage.getItem('gestao_obras_auth_user');
-    if (savedUser) {
+    // Remove qualquer login permanente anterior do localStorage
+    localStorage.removeItem('gestao_obras_auth_user');
+
+    // Verifica se já está autenticado nesta aba ativa (sessionStorage)
+    const sessionUser = sessionStorage.getItem('gestao_obras_session_user');
+    if (sessionUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        setUser(JSON.parse(sessionUser));
       } catch {
-        setUser(INITIAL_PROFILES[0]);
+        setUser(null);
       }
     } else {
-      // Padrão de entrada: Admin
-      setUser(INITIAL_PROFILES[0]);
-      localStorage.setItem('gestao_obras_auth_user', JSON.stringify(INITIAL_PROFILES[0]));
+      // Sempre entra na tela de login
+      setUser(null);
     }
     setIsLoading(false);
-
-    // Se o Supabase estiver configurado, ouvir mudanças reais
-    if (isSupabaseConfigured() && supabase) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user) {
-          // Atualiza perfil caso haja login ativo
-          const profile = INITIAL_PROFILES.find(p => p.email === session.user.email) || {
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.user_metadata?.full_name || 'Usuário Supabase',
-            role: (session.user.user_metadata?.role as UserRole) || 'gestor',
-            organization_id: 'org-1',
-            organization_name: 'Monteplan Engenharia',
-          };
-          setUser(profile);
-        }
-      });
-    }
   }, []);
 
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
@@ -75,7 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             organization_name: 'Monteplan Engenharia',
           };
           setUser(profile);
-          localStorage.setItem('gestao_obras_auth_user', JSON.stringify(profile));
+          sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(profile));
           return { success: true };
         }
       } catch (err: any) {
@@ -87,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const found = INITIAL_PROFILES.find(p => p.email.toLowerCase() === email.toLowerCase());
     if (found) {
       setUser(found);
-      localStorage.setItem('gestao_obras_auth_user', JSON.stringify(found));
+      sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(found));
       return { success: true };
     }
 
@@ -101,7 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       organization_name: 'Monteplan Engenharia',
     };
     setUser(demoUser);
-    localStorage.setItem('gestao_obras_auth_user', JSON.stringify(demoUser));
+    sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(demoUser));
     return { success: true };
   };
 
@@ -110,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.auth.signOut();
     }
     setUser(null);
+    sessionStorage.removeItem('gestao_obras_session_user');
     localStorage.removeItem('gestao_obras_auth_user');
   };
 
@@ -123,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       organization_name: 'Monteplan Engenharia',
     };
     setUser(profileTemplate);
-    localStorage.setItem('gestao_obras_auth_user', JSON.stringify(profileTemplate));
+    sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(profileTemplate));
   };
 
   const requestAccess = async (_data: { name: string; email: string; phone: string; password: string }) => {
