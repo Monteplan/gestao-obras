@@ -82,18 +82,19 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({ onSelectWo
   const [hoveredFinIndex, setHoveredFinIndex] = useState<number | null>(null);
   const [hoveredProgressIndex, setHoveredProgressIndex] = useState<number | null>(null);
 
-  // Listas únicas de filtros
-  const uniqueUfs = Array.from(new Set(works.map((w) => w.state || w.city_state?.split('/')[1] || '').filter(Boolean))).sort();
-  const uniqueCities = Array.from(new Set(works
-    .filter((w) => selectedUf === 'todos' || (w.state || w.city_state?.split('/')[1]) === selectedUf)
-    .map((w) => w.city || w.city_state?.split('/')[0] || '')
+  // Listas únicas de filtros seguras
+  const uniqueUfs = Array.from(new Set((works || []).map((w) => w?.state || w?.city_state?.split('/')[1] || '').filter(Boolean))).sort();
+  const uniqueCities = Array.from(new Set((works || [])
+    .filter((w) => selectedUf === 'todos' || (w?.state || w?.city_state?.split('/')[1]) === selectedUf)
+    .map((w) => w?.city || w?.city_state?.split('/')[0] || '')
     .filter(Boolean)
   )).sort();
-  const uniqueEngineers = Array.from(new Set(works.map((w) => w.engineer_name || w.manager_name).filter(Boolean))).sort();
-  const managersList = Array.from(new Set(works.map((w) => w.manager_name)));
+  const uniqueEngineers = Array.from(new Set((works || []).map((w) => w?.engineer_name || w?.manager_name || '').filter(Boolean))).sort();
+  const managersList = Array.from(new Set((works || []).map((w) => w?.manager_name || '').filter(Boolean)));
 
   // Filtros combinados
-  const filteredWorks = works.filter((w) => {
+  const filteredWorks = (works || []).filter((w) => {
+    if (!w) return false;
     const workState = w.state || w.city_state?.split('/')[1] || '';
     const workCity = w.city || w.city_state?.split('/')[0] || '';
     const workEng = w.engineer_name || w.manager_name || '';
@@ -152,20 +153,24 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({ onSelectWo
   // Dados para Gráficos
   const financialComparisonData = filteredWorks.map((w) => {
     const fin = calculateFinancials(w, budgetItems, orders, incurredCosts, revenues);
+    const wName = w.name || 'Obra';
     return {
-      name: w.name.length > 18 ? w.name.slice(0, 18) + '...' : w.name,
-      fullName: w.name,
+      name: wName.length > 18 ? wName.slice(0, 18) + '...' : wName,
+      fullName: wName,
       Orçado: fin.approvedBudget,
       Incorrido: fin.incurredCosts,
       Comprometido: fin.committedOrders,
     };
   });
 
-  const progressComparisonData = filteredWorks.map((w) => ({
-    name: w.name.length > 20 ? w.name.slice(0, 20) + '...' : w.name,
-    fullName: w.name,
-    Avanço: w.progress_percent,
-  }));
+  const progressComparisonData = filteredWorks.map((w) => {
+    const wName = w.name || 'Obra';
+    return {
+      name: wName.length > 20 ? wName.slice(0, 20) + '...' : wName,
+      fullName: wName,
+      Avanço: w.progress_percent || 0,
+    };
+  });
 
   // Métricas do Acompanhamento Físico (Seção 14 da Especificação)
   const filteredStages = stages.filter((s) => filteredWorkIds.has(s.work_id));

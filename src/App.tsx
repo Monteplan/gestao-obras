@@ -5,6 +5,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { DeviceProvider } from './contexts/DeviceContext';
 import { LoginPage } from './components/auth/LoginPage';
 import { AppLayout } from './components/layout/AppLayout';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 const MainContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -28,20 +29,24 @@ const MainContent: React.FC = () => {
 
   return (
     <DataProvider>
-      <AppLayout />
+      <ErrorBoundary>
+        <AppLayout />
+      </ErrorBoundary>
     </DataProvider>
   );
 };
 
 export function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <DeviceProvider>
-          <MainContent />
-        </DeviceProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <DeviceProvider>
+            <MainContent />
+          </DeviceProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
