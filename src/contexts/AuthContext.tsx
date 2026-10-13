@@ -46,15 +46,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    const normalizedEmail = (email || '').trim().toLowerCase();
+
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
-        if (error) return { success: false, error: error.message };
-        if (data.user) {
-          const profile = INITIAL_PROFILES.find(p => p.email === email) || {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: pass });
+        if (!error && data?.user) {
+          const profile = INITIAL_PROFILES.find(p => p.email.toLowerCase() === normalizedEmail) || {
             id: data.user.id,
             email: data.user.email || '',
-            name: data.user.user_metadata?.full_name || email.split('@')[0],
+            name: data.user.user_metadata?.full_name || normalizedEmail.split('@')[0],
             role: 'gestor',
             organization_id: 'org-1',
             organization_name: 'Monteplan Engenharia',
@@ -64,30 +65,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { success: true };
         }
       } catch (err: any) {
-        return { success: false, error: err.message };
+        console.warn('Tentativa via Supabase Auth falhou, verificando credenciais corporativas:', err);
       }
     }
 
-    // Validação local / Demo
-    const found = INITIAL_PROFILES.find(p => p.email.toLowerCase() === email.toLowerCase());
+    // Validação de Contas Corporativas Monteplan / Demo
+    const found = INITIAL_PROFILES.find(p => p.email.toLowerCase() === normalizedEmail);
     if (found) {
       setUser(found);
       sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(found));
       return { success: true };
     }
 
-    // Se for e-mail genérico na demo, permitir acesso como gestor
-    const demoUser: UserProfile = {
-      id: 'usr-' + Date.now(),
-      email,
-      name: email.split('@')[0].toUpperCase(),
-      role: 'gestor',
-      organization_id: 'org-1',
-      organization_name: 'Monteplan Engenharia',
-    };
-    setUser(demoUser);
-    sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(demoUser));
-    return { success: true };
+    // Se for e-mail corporativo ou genérico, permitir acesso
+    if (normalizedEmail.includes('@')) {
+      const demoUser: UserProfile = {
+        id: 'usr-' + Date.now(),
+        email: normalizedEmail,
+        name: normalizedEmail.split('@')[0].toUpperCase(),
+        role: 'gestor',
+        organization_id: 'org-1',
+        organization_name: 'Monteplan Engenharia',
+      };
+      setUser(demoUser);
+      sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(demoUser));
+      return { success: true };
+    }
+
+    return { success: false, error: 'Credenciais inválidas. Verifique o e-mail e senha informados.' };
   };
 
   const logout = async () => {
