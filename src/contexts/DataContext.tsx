@@ -26,6 +26,7 @@ import {
   BudgetAccountStatus,
   PcoImportProfile,
   PcoParsedData,
+  StageProgressHistory,
 } from '../types';
 import {
   INITIAL_WORKS,
@@ -45,10 +46,11 @@ import {
   INITIAL_DE_PARA_1,
   INITIAL_DE_PARA_2,
   INITIAL_PHYSICAL_PROGRESS_ENTRIES,
+  INITIAL_STAGE_PROGRESS_HISTORY,
 } from '../lib/seed-data';
 import { calculateWeightedProgress, calculatePhysicalProgressWeighted, simulateInccAdjustment, formatBRL } from '../lib/utils';
 import { useAuth } from './AuthContext';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { fetchAllFromSupabase, saveImportedEntriesToSupabase } from '../lib/supabase-sync';
 
 interface DataContextType {
@@ -78,6 +80,7 @@ interface DataContextType {
   budgetToErpMappings: BudgetToErpMapping[];
   erpToBudgetTotalizerMappings: ErpToBudgetTotalizerMapping[];
   physicalProgressEntries: PhysicalProgressEntry[];
+  stageProgressHistory: StageProgressHistory[];
   inccAdjustments: BudgetIndexAdjustment[];
 
   // Works CRUD
@@ -228,6 +231,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [budgetToErpMappings, setBudgetToErpMappings] = useState<BudgetToErpMapping[]>(() => loadInitial('budget_to_erp_mappings', INITIAL_DE_PARA_1));
   const [erpToBudgetTotalizerMappings, setErpToBudgetTotalizerMappings] = useState<ErpToBudgetTotalizerMapping[]>(() => loadInitial('erp_to_budget_totalizer_mappings', INITIAL_DE_PARA_2));
   const [physicalProgressEntries, setPhysicalProgressEntries] = useState<PhysicalProgressEntry[]>(() => loadInitial('physical_progress_entries', INITIAL_PHYSICAL_PROGRESS_ENTRIES));
+  const [stageProgressHistory, setStageProgressHistory] = useState<StageProgressHistory[]>(() => loadInitial('stage_progress_history', INITIAL_STAGE_PROGRESS_HISTORY));
   const [inccAdjustments, setInccAdjustments] = useState<BudgetIndexAdjustment[]>(() => loadInitial('incc_adjustments', []));
 
   // Estados de Sincronização com Supabase Cloud
@@ -304,6 +308,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_budget_to_erp_mappings`, JSON.stringify(budgetToErpMappings)); }, [budgetToErpMappings]);
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_erp_to_budget_totalizer_mappings`, JSON.stringify(erpToBudgetTotalizerMappings)); }, [erpToBudgetTotalizerMappings]);
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_physical_progress_entries`, JSON.stringify(physicalProgressEntries)); }, [physicalProgressEntries]);
+  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_stage_progress_history`, JSON.stringify(stageProgressHistory)); }, [stageProgressHistory]);
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_incc_adjustments`, JSON.stringify(inccAdjustments)); }, [inccAdjustments]);
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_pco_profiles`, JSON.stringify(pcoImportProfiles)); }, [pcoImportProfiles]);
 
@@ -412,36 +417,208 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const validatedPercent = Math.min(100, Math.max(0, Math.round(newPercent * 100) / 100));
     const isCompleted = validatedPercent === 100;
     const newStatus: Stage['status'] = isCompleted ? 'concluida' : (validatedPercent > 0 ? 'em_andamento' : 'nao_iniciada');
+    const oldPercent = target.progress_percent || 0;
 
-    let nextStages = stages.map(s => s.id === id ? {
-      ...s,
-      progress_percent: validatedPercent,
-      status: newStatus,
-      actual_start: s.actual_start || (validatedPercent > 0 ? new Date().toISOString().split('T')[0] : undefined),
-      actual_end: isCompleted ? (s.actual_end || new Date().toISOString().split('T')[0]) : undefined,
-      updated_at: new Date().toISOString(),
-    } : s);
+    let nextStages = [...stages];
+    const historyEntriesToRecord: StageProgressHistory[] = [];
 
-    // Rollup automático para a macroetapa pai se esta for uma subetapa
+    // Calcular avanço geral da obra antes
+    const workBeforeStages = stages.filter(s => s.work_id === target.work_id);
+    const workProgressBefore = calculateWeightedProgress(workBeforeStages);
+
+    let finalParentProgress: number | null = null;
+    let finalParentStatus: Stage['status'] | null = null;
+
+    // 1. Caso seja uma Subetapa (possui parent_id)
     if (target.parent_id) {
+      nextStages = nextStages.map(s => s.id === id ? {
+        ...s,
+        progress_percent: validatedPercent,
+        status: newStatus,
+        actual_start: s.actual_start || (validatedPercent > 0 ? new Date().toISOString().split('T')[0] : undefined),
+        actual_end: isCompleted ? (s.actual_end || new Date().toISOString().split('T')[0]) : undefined,
+        updated_at: new Date().toISOString(),
+      } : s);
+
+      // Rollup automático e ponderado para a macroetapa pai
       const siblingSubstages = nextStages.filter(s => s.parent_id === target.parent_id);
       const totalWeight = siblingSubstages.reduce((acc, s) => acc + (s.weight_percent || 0), 0);
       const weightedSum = siblingSubstages.reduce((acc, s) => acc + (s.progress_percent || 0) * (s.weight_percent || 0), 0);
-      const parentProgress = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : 0;
-      const parentCompleted = parentProgress === 100;
-      const parentStatus: Stage['status'] = parentCompleted ? 'concluida' : (parentProgress > 0 ? 'em_andamento' : 'nao_iniciada');
+      finalParentProgress = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : 0;
+      const parentCompleted = finalParentProgress === 100;
+      finalParentStatus = parentCompleted ? 'concluida' : (finalParentProgress > 0 ? 'em_andamento' : 'nao_iniciada');
+
+      const parentStage = stages.find(s => s.id === target.parent_id);
+      const oldParentPercent = parentStage?.progress_percent || 0;
 
       nextStages = nextStages.map(s => s.id === target.parent_id ? {
         ...s,
-        progress_percent: parentProgress,
-        status: parentStatus,
+        progress_percent: finalParentProgress!,
+        status: finalParentStatus!,
         updated_at: new Date().toISOString(),
       } : s);
+
+      // Calcular avanço geral da obra após a consolidação
+      const workAfterStages = nextStages.filter(s => s.work_id === target.work_id);
+      const workProgressAfter = calculateWeightedProgress(workAfterStages);
+
+      // Histórico da medição da subetapa
+      historyEntriesToRecord.push({
+        id: 'sph-' + Date.now() + '-1',
+        stage_id: target.id,
+        stage_code: target.code,
+        stage_name: target.name,
+        is_substage: true,
+        work_id: target.work_id,
+        previous_percent: oldPercent,
+        new_percent: validatedPercent,
+        delta_percent: Math.round((validatedPercent - oldPercent) * 100) / 100,
+        work_progress_before: workProgressBefore,
+        work_progress_after: workProgressAfter,
+        reason: reason || 'Apontamento de progresso físico na subetapa',
+        user_id: user?.id || 'eng',
+        user_name: user?.name || 'Eng. Lucas Pinho',
+        created_at: new Date().toISOString(),
+      });
+
+      // Se a macroetapa pai teve seu avanço alterado pelo rollup
+      if (parentStage && oldParentPercent !== finalParentProgress) {
+        historyEntriesToRecord.push({
+          id: 'sph-' + Date.now() + '-2',
+          stage_id: parentStage.id,
+          stage_code: parentStage.code,
+          stage_name: parentStage.name,
+          is_substage: false,
+          work_id: target.work_id,
+          previous_percent: oldParentPercent,
+          new_percent: finalParentProgress,
+          delta_percent: Math.round((finalParentProgress - oldParentPercent) * 100) / 100,
+          work_progress_before: workProgressBefore,
+          work_progress_after: workProgressAfter,
+          reason: `Recalculado por consolidação ponderada (subetapa ${target.code}: ${oldPercent}% -> ${validatedPercent}%)`,
+          user_id: 'system',
+          user_name: 'Sistema (Cálculo Ponderado)',
+          created_at: new Date().toISOString(),
+        });
+      }
+    } else {
+      // 2. Caso seja uma Macroetapa (não possui parent_id)
+      const childSubstages = nextStages.filter(s => s.parent_id === id);
+      
+      if (childSubstages.length > 0) {
+        // Se a macroetapa possui subetapas e o usuário definiu diretamente (ex: 100% ou 0%)
+        // Replica o percentual para todas as subetapas para manter consistência
+        nextStages = nextStages.map(s => {
+          if (s.id === id || s.parent_id === id) {
+            return {
+              ...s,
+              progress_percent: validatedPercent,
+              status: newStatus,
+              actual_start: s.actual_start || (validatedPercent > 0 ? new Date().toISOString().split('T')[0] : undefined),
+              actual_end: isCompleted ? (s.actual_end || new Date().toISOString().split('T')[0]) : undefined,
+              updated_at: new Date().toISOString(),
+            };
+          }
+          return s;
+        });
+      } else {
+        // Etapa simples sem subetapas
+        nextStages = nextStages.map(s => s.id === id ? {
+          ...s,
+          progress_percent: validatedPercent,
+          status: newStatus,
+          actual_start: s.actual_start || (validatedPercent > 0 ? new Date().toISOString().split('T')[0] : undefined),
+          actual_end: isCompleted ? (s.actual_end || new Date().toISOString().split('T')[0]) : undefined,
+          updated_at: new Date().toISOString(),
+        } : s);
+      }
+
+      // Calcular avanço geral da obra após
+      const workAfterStages = nextStages.filter(s => s.work_id === target.work_id);
+      const workProgressAfter = calculateWeightedProgress(workAfterStages);
+
+      historyEntriesToRecord.push({
+        id: 'sph-' + Date.now() + '-1',
+        stage_id: target.id,
+        stage_code: target.code,
+        stage_name: target.name,
+        is_substage: false,
+        work_id: target.work_id,
+        previous_percent: oldPercent,
+        new_percent: validatedPercent,
+        delta_percent: Math.round((validatedPercent - oldPercent) * 100) / 100,
+        work_progress_before: workProgressBefore,
+        work_progress_after: workProgressAfter,
+        reason: reason || (childSubstages.length > 0 ? `Macroetapa atualizada para ${validatedPercent}% refletindo em suas ${childSubstages.length} subetapas` : 'Apontamento de progresso físico na etapa'),
+        user_id: user?.id || 'eng',
+        user_name: user?.name || 'Eng. Lucas Pinho',
+        created_at: new Date().toISOString(),
+      });
     }
 
     setStages(nextStages);
     recalculateWorkProgress(target.work_id, nextStages);
-    addAuditLog('Atualizar Progresso', 'stages', id, `Etapa ${target.name}: ${target.progress_percent}% -> ${validatedPercent}%. ${reason ? 'Motivo: ' + reason : ''}`);
+    setStageProgressHistory(prev => [...historyEntriesToRecord, ...prev]);
+    addAuditLog(
+      'Atualizar Progresso',
+      'stages',
+      id,
+      `Etapa ${target.code} (${target.name}): ${oldPercent}% -> ${validatedPercent}%. ${reason ? 'Motivo: ' + reason : ''}`
+    );
+
+    // Persistência assíncrona no Supabase Cloud (quando conectado)
+    if (isSupabaseConfigured() && supabase) {
+      (async () => {
+        try {
+          // Atualiza a etapa alvo
+          await supabase.from('stages').update({
+            progress_percent: validatedPercent,
+            status: newStatus,
+            actual_start: validatedPercent > 0 ? new Date().toISOString().split('T')[0] : null,
+            actual_end: isCompleted ? new Date().toISOString().split('T')[0] : null,
+            updated_at: new Date().toISOString(),
+          }).eq('id', target.id);
+
+          // Se for subetapa, atualiza a macroetapa pai no Supabase
+          if (target.parent_id && finalParentProgress !== null) {
+            await supabase.from('stages').update({
+              progress_percent: finalParentProgress,
+              status: finalParentStatus,
+              updated_at: new Date().toISOString(),
+            }).eq('id', target.parent_id);
+          }
+
+          // Se for macroetapa com subetapas, atualiza as filhas
+          const childSubstages = nextStages.filter(s => s.parent_id === id);
+          if (!target.parent_id && childSubstages.length > 0) {
+            await supabase.from('stages').update({
+              progress_percent: validatedPercent,
+              status: newStatus,
+              updated_at: new Date().toISOString(),
+            }).eq('parent_id', target.id);
+          }
+
+          // Atualizar o avanço geral da obra na tabela works do Supabase
+          const updatedWorkStages = nextStages.filter(s => s.work_id === target.work_id);
+          const finalWorkProgress = calculateWeightedProgress(updatedWorkStages);
+          await supabase.from('works').update({
+            progress_percent: finalWorkProgress,
+            updated_at: new Date().toISOString(),
+          }).eq('id', target.work_id);
+
+          // Inserir registro na trilha de auditoria
+          await supabase.from('audit_logs').insert([{
+            work_id: target.work_id,
+            action: 'Atualizar Progresso Físico',
+            entity_name: 'stages',
+            record_id: target.id,
+            details: `Etapa ${target.code} (${target.name}): ${oldPercent}% -> ${validatedPercent}%. Obra: ${workProgressBefore}% -> ${calculateWeightedProgress(nextStages.filter(s => s.work_id === target.work_id))}%. Motivo: ${reason || 'N/A'}`
+          }]);
+        } catch (supabaseErr) {
+          console.warn('[Supabase] Falha ao persistir medição física:', supabaseErr);
+        }
+      })();
+    }
   };
 
   // Budget
@@ -1218,6 +1395,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setBudgetToErpMappings(INITIAL_DE_PARA_1);
     setErpToBudgetTotalizerMappings(INITIAL_DE_PARA_2);
     setPhysicalProgressEntries(INITIAL_PHYSICAL_PROGRESS_ENTRIES);
+    setStageProgressHistory(INITIAL_STAGE_PROGRESS_HISTORY);
     setInccAdjustments([]);
     setPcoImportProfiles([
       {
@@ -1272,6 +1450,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         budgetToErpMappings,
         erpToBudgetTotalizerMappings,
         physicalProgressEntries,
+        stageProgressHistory,
         inccAdjustments,
         pcoImportProfiles,
         importPcoWorkbook,

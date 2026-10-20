@@ -149,9 +149,15 @@ export interface Stage {
 export interface StageProgressHistory {
   id: string;
   stage_id: string;
+  stage_code?: string;
+  stage_name?: string;
+  is_substage?: boolean;
   work_id: string;
   previous_percent: number;
   new_percent: number;
+  delta_percent?: number;
+  work_progress_before?: number;
+  work_progress_after?: number;
   reason?: string;
   user_id: string;
   user_name: string;

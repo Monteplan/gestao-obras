@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { Stage, Work } from '../../types';
-import { formatDateBR, formatPercent, buildStageHierarchy } from '../../lib/utils';
+import { Stage, Work, StageProgressHistory } from '../../types';
+import { formatDateBR, formatPercent, buildStageHierarchy, calculateWeightedProgress } from '../../lib/utils';
 import {
   GitFork,
   Plus,
@@ -17,6 +17,14 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
+  History,
+  Info,
+  ArrowRight,
+  ArrowUpRight,
+  ArrowDownRight,
+  RotateCcw,
+  Search,
+  Check,
 } from 'lucide-react';
 import { GanttChart } from './GanttChart';
 
@@ -25,12 +33,15 @@ interface StagesManagerProps {
 }
 
 export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) => {
-  const { works, stages, addStage, updateStageProgress, deleteStage } = useData();
+  const { works, stages, stageProgressHistory, addStage, updateStageProgress, deleteStage } = useData();
   const { canEdit } = useAuth();
 
   const [currentWorkId, setCurrentWorkId] = useState<string>(selectedWorkId || works[0]?.id || '');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showProgressModal, setShowProgressModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyFilterStageId, setHistoryFilterStageId] = useState<string>('all');
+  const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
   const [selectedStage, setSelectedStage] = useState<Stage | null>(null);
   const [newProgress, setNewProgress] = useState<number>(0);
   const [progressInput, setProgressInput] = useState<string>('0.00');
@@ -62,6 +73,51 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
   const workStages = stages.filter((s) => s.work_id === currentWorkId);
   const rootStages = workStages.filter((s) => !s.parent_id);
   const hierarchicalStages = buildStageHierarchy(workStages);
+
+  // Simulação de impacto do novo progresso em tempo real
+  const parentMacro = selectedStage?.parent_id ? rootStages.find(r => r.id === selectedStage.parent_id) : null;
+  const simulatedParentProgress = useMemo(() => {
+    if (!selectedStage || !selectedStage.parent_id) return null;
+    const siblings = workStages.filter(s => s.parent_id === selectedStage.parent_id);
+    const totalWeight = siblings.reduce((acc, s) => acc + (s.weight_percent || 0), 0);
+    const weightedSum = siblings.reduce((acc, s) => {
+      const p = s.id === selectedStage.id ? newProgress : (s.progress_percent || 0);
+      return acc + p * (s.weight_percent || 0);
+    }, 0);
+    return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : 0;
+  }, [selectedStage, newProgress, workStages]);
+
+  const simulatedWorkProgress = useMemo(() => {
+    if (!selectedStage) return null;
+    let next = workStages.map(s => s.id === selectedStage.id ? { ...s, progress_percent: newProgress } : s);
+    if (selectedStage.parent_id && simulatedParentProgress !== null) {
+      next = next.map(s => s.id === selectedStage.parent_id ? { ...s, progress_percent: simulatedParentProgress } : s);
+    }
+    return calculateWeightedProgress(next);
+  }, [selectedStage, newProgress, simulatedParentProgress, workStages]);
+
+  const stageRecentHistory = useMemo(() => {
+    if (!selectedStage) return [];
+    return (stageProgressHistory || []).filter(h => h.stage_id === selectedStage.id);
+  }, [selectedStage, stageProgressHistory]);
+
+  const filteredHistory = useMemo(() => {
+    return (stageProgressHistory || []).filter(h => {
+      if (h.work_id !== currentWorkId) return false;
+      if (historyFilterStageId !== 'all' && h.stage_id !== historyFilterStageId && h.stage_code !== historyFilterStageId) {
+        return false;
+      }
+      if (historySearchTerm) {
+        const term = historySearchTerm.toLowerCase();
+        const codeMatch = (h.stage_code || '').toLowerCase().includes(term);
+        const nameMatch = (h.stage_name || '').toLowerCase().includes(term);
+        const reasonMatch = (h.reason || '').toLowerCase().includes(term);
+        const userMatch = (h.user_name || '').toLowerCase().includes(term);
+        if (!codeMatch && !nameMatch && !reasonMatch && !userMatch) return false;
+      }
+      return true;
+    });
+  }, [stageProgressHistory, currentWorkId, historyFilterStageId, historySearchTerm]);
 
   // Soma de pesos das macroetapas e verificação de balanço (100.00%)
   const rootWeightsSum = rootStages.reduce((acc, s) => acc + (s.weight_percent || 0), 0);
@@ -183,6 +239,20 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
               ))}
             </select>
           </div>
+
+          <button
+            onClick={() => setShowHistoryModal(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition-all shadow-sm"
+            title="Ver histórico de apontamentos e evolução da obra"
+          >
+            <History className="w-4 h-4 text-sky-400" />
+            <span>Histórico de Medições</span>
+            {filteredHistory.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-400 text-[10px] font-mono font-bold">
+                {filteredHistory.length}
+              </span>
+            )}
+          </button>
 
           {canEdit('stages') && (
             <button
@@ -442,25 +512,115 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
       {/* Modal de Atualização de Progresso com Histórico */}
       {showProgressModal && selectedStage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="glass-panel w-full max-w-md p-6 rounded-2xl border border-slate-700 shadow-2xl relative">
+          <div className="glass-panel w-full max-w-lg p-6 rounded-2xl border border-slate-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-bold text-white">Apontar Progresso Físico</h3>
-              <button onClick={() => setShowProgressModal(false)} className="text-slate-400 hover:text-white">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 rounded-lg bg-sky-500/20 text-sky-400">
+                  <Sliders className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Apontar Progresso Físico</h3>
+                  <span className="text-[11px] text-slate-400">Medição executiva e consolidação hierárquica</span>
+                </div>
+              </div>
+              <button onClick={() => setShowProgressModal(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSaveProgress} className="mt-4 space-y-4 text-xs">
-              <div>
-                <span className="text-slate-400 block">Etapa Selecionada:</span>
-                <strong className="text-white text-sm font-bold block">{selectedStage.code} - {selectedStage.name}</strong>
-                {selectedStage.parent_id && (
-                  <span className="text-[10px] text-sky-400 block mt-0.5">
-                    Subetapa (Nível 2) - o avanço atualizará automaticamente a macroetapa correspondente
+              {/* Informações da Etapa */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-sky-400">{selectedStage.code}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${selectedStage.parent_id ? 'bg-slate-800 text-slate-300' : 'bg-blue-950 text-blue-300 border border-blue-800/50'}`}>
+                    {selectedStage.parent_id ? 'Subetapa (Nível 2)' : 'Macroetapa (Nível 1)'}
                   </span>
-                )}
+                </div>
+                <strong className="text-white text-sm font-bold block">{selectedStage.name}</strong>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                  <span>Responsável: <strong className="text-slate-300">{selectedStage.responsible}</strong></span>
+                  <span>Peso: <strong className="text-slate-300">{formatPercent(selectedStage.weight_percent, 2)}</strong></span>
+                </div>
               </div>
 
+              {/* Se for Subetapa: Exibe contexto da Macroetapa e Impacto Simulado */}
+              {selectedStage.parent_id && parentMacro && (
+                <div className="p-3.5 rounded-xl bg-sky-950/40 border border-sky-800/50 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium">Vinculada à Macroetapa:</span>
+                    <span className="font-bold text-sky-300">{parentMacro.code} - {parentMacro.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Peso relativo na Macroetapa:</span>
+                    <span className="font-bold text-slate-200">{formatPercent(selectedStage.weight_percent, 2)} da macro</span>
+                  </div>
+                  {simulatedParentProgress !== null && (
+                    <div className="pt-2 border-t border-sky-900/60 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-300">Novo avanço estimado da Macro {parentMacro.code}:</span>
+                      <div className="flex items-center space-x-1.5 font-bold">
+                        <span className="text-slate-400">{formatPercent(parentMacro.progress_percent, 2)}</span>
+                        <ArrowRight className="w-3 h-3 text-sky-400" />
+                        <span className="text-emerald-400 font-mono">{formatPercent(simulatedParentProgress, 2)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {simulatedWorkProgress !== null && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-300">Avanço geral estimado da Obra:</span>
+                      <div className="flex items-center space-x-1.5 font-bold">
+                        <span className="text-slate-400">{formatPercent(activeWork?.progress_percent || 0, 2)}</span>
+                        <ArrowRight className="w-3 h-3 text-sky-400" />
+                        <span className="text-emerald-400 font-mono">{formatPercent(simulatedWorkProgress, 2)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Se for Macroetapa com Subetapas: Explicação e Ações Rápidas */}
+              {!selectedStage.parent_id && selectedStage.substages && selectedStage.substages.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-blue-950/50 border border-blue-800/60 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center space-x-2">
+                      <Info className="w-4 h-4 text-blue-400" />
+                      <span className="text-white font-bold">Macroetapa Analítica ({selectedStage.substages.length} Subetapas)</span>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-blue-400">{formatPercent(selectedStage.progress_percent, 2)}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    O avanço desta macroetapa é a <strong>média ponderada estrita</strong> de suas {selectedStage.substages.length} subetapas executivas. Ao salvar um percentual nesta tela, ele será aplicado como diretriz às subetapas.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewProgress(100);
+                        setProgressInput('100.00');
+                        setProgressReason('Conclusão de todas as subetapas da macroetapa');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-600/40 text-[11px] font-semibold transition-all flex items-center space-x-1"
+                    >
+                      <Check className="w-3 h-3" />
+                      <span>Concluir todas ({selectedStage.substages.length}) a 100%</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewProgress(0);
+                        setProgressInput('0.00');
+                        setProgressReason('Reinício / zeramento das subetapas da macroetapa');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-all flex items-center space-x-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Zerar todas a 0%</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Campo de Entrada de Progresso */}
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <label htmlFor="progress-percent-input" className="block text-slate-300 font-semibold text-xs">
@@ -512,6 +672,35 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
                 />
               </div>
 
+              {/* Histórico Recente desta Etapa */}
+              {stageRecentHistory.length > 0 && (
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <span className="text-[11px] font-bold text-slate-300 flex items-center space-x-1.5">
+                    <History className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Últimos Apontamentos desta Etapa ({stageRecentHistory.length})</span>
+                  </span>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {stageRecentHistory.slice(0, 4).map(h => (
+                      <div key={h.id} className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[10px] space-y-1">
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span>{new Date(h.created_at).toLocaleString('pt-BR')}</span>
+                          <span className="font-medium text-slate-300">{h.user_name}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-slate-300">
+                            {formatPercent(h.previous_percent, 2)} → <strong className="text-white">{formatPercent(h.new_percent, 2)}</strong>
+                          </span>
+                          <span className={`font-bold px-1.5 py-0.5 rounded ${h.delta_percent && h.delta_percent > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                            {h.delta_percent && h.delta_percent > 0 ? `+${h.delta_percent}%` : `${h.delta_percent || 0}%`}
+                          </span>
+                        </div>
+                        {h.reason && <p className="text-slate-400 italic">"{h.reason}"</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
@@ -528,6 +717,137 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Histórico Completo de Medições & Evolução Físico-Temporal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-4xl p-6 rounded-2xl border border-slate-700 shadow-2xl relative max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <History className="w-5 h-5 text-sky-400" />
+                  <h3 className="text-base font-bold text-white">Histórico de Medições & Evolução Físico-Temporal</h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Rastreabilidade e auditoria de cada apontamento por etapa e evolução consolidada da obra
+                </p>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filtros e Busca */}
+            <div className="py-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-400 font-medium">Filtrar Etapa:</span>
+                <select
+                  value={historyFilterStageId}
+                  onChange={(e) => setHistoryFilterStageId(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-semibold focus:outline-none"
+                >
+                  <option value="all">Todas as Etapas e Subetapas ({stageProgressHistory?.length || 0})</option>
+                  {workStages.map(s => (
+                    <option key={s.id} value={s.id}>{s.code} - {s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historySearchTerm}
+                  onChange={(e) => setHistorySearchTerm(e.target.value)}
+                  placeholder="Buscar código, motivo ou responsável..."
+                  className="pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 w-64"
+                />
+              </div>
+            </div>
+
+            {/* Tabela de Histórico */}
+            <div className="flex-1 overflow-y-auto mt-3">
+              {filteredHistory.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 text-xs">
+                  Nenhum apontamento histórico encontrado para os filtros selecionados.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900/90 text-[11px] uppercase tracking-wider text-slate-400 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2.5">Data / Hora</th>
+                      <th className="px-3 py-2.5">Etapa / Subetapa</th>
+                      <th className="px-2 py-2.5 text-center">Nível</th>
+                      <th className="px-3 py-2.5 text-center">Evolução da Etapa</th>
+                      <th className="px-3 py-2.5 text-center">Variação (Δ)</th>
+                      <th className="px-3 py-2.5 text-center">Avanço da Obra</th>
+                      <th className="px-3 py-2.5">Responsável</th>
+                      <th className="px-3 py-2.5">Motivo / Justificativa</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-medium">
+                    {filteredHistory.map((h) => {
+                      const isPositive = (h.delta_percent || 0) > 0;
+                      return (
+                        <tr key={h.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap text-[11px]">
+                            {new Date(h.created_at).toLocaleString('pt-BR')}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-mono font-bold text-sky-400">{h.stage_code}</div>
+                            <div className="text-slate-200 text-[11px] truncate max-w-xs">{h.stage_name}</div>
+                          </td>
+                          <td className="px-2 py-2.5 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${h.is_substage ? 'bg-slate-800 text-slate-300' : 'bg-blue-950 text-blue-300 border border-blue-800/50'}`}>
+                              {h.is_substage ? 'Sub (N2)' : 'Macro (N1)'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap font-mono">
+                            <span className="text-slate-400">{formatPercent(h.previous_percent, 2)}</span>
+                            <span className="mx-1.5 text-slate-500">→</span>
+                            <strong className="text-white">{formatPercent(h.new_percent, 2)}</strong>
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center space-x-0.5 ${isPositive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                              {isPositive ? <ArrowUpRight className="w-3 h-3" /> : null}
+                              <span>{isPositive ? `+${formatPercent(h.delta_percent || 0, 2)}` : formatPercent(h.delta_percent || 0, 2)}</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap text-[11px]">
+                            {h.work_progress_after !== undefined ? (
+                              <span className="text-slate-300 font-mono">
+                                {formatPercent(h.work_progress_before || 0, 2)} → <strong className="text-emerald-400">{formatPercent(h.work_progress_after, 2)}</strong>
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap text-[11px]">
+                            {h.user_name}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-400 text-[11px] max-w-xs">
+                            {h.reason || <span className="italic text-slate-600">Sem observações</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span>Total de {filteredHistory.length} apontamento(s) registrado(s)</span>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
