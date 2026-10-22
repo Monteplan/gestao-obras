@@ -38,7 +38,9 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
   const [sortOption, setSortOption] = useState<SortField>('date_desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => 
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table'
+  );
 
   // Fechar com ESC e bloquear scroll do fundo enquanto o pop-up estiver aberto
   useEffect(() => {
@@ -154,16 +156,16 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/85 backdrop-blur-md overflow-y-auto overscroll-contain animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-0 sm:p-4 md:p-6 bg-slate-950/85 backdrop-blur-md overflow-y-auto overscroll-contain animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
         id="dre-account-entries-card"
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-5xl my-auto max-h-[96vh] sm:max-h-[92vh] flex flex-col rounded-2xl border-2 border-blue-500/50 bg-slate-900 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative w-full h-full sm:h-auto sm:max-w-5xl sm:my-auto sm:max-h-[92vh] flex flex-col rounded-none sm:rounded-2xl border-0 sm:border-2 sm:border-blue-500/50 bg-slate-900 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
       >
         {/* Cabeçalho do Card Pop-up (Fixo no topo) */}
-        <div className="p-3.5 sm:p-5 bg-gradient-to-r from-blue-950/90 via-slate-900 to-indigo-950/80 border-b border-blue-500/30 flex flex-col md:flex-row md:items-center justify-between gap-3 flex-shrink-0">
+        <div className="p-3 sm:p-5 bg-gradient-to-r from-blue-950/90 via-slate-900 to-indigo-950/80 border-b border-blue-500/30 flex flex-col md:flex-row md:items-center justify-between gap-2.5 flex-shrink-0">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/40">
@@ -216,14 +218,42 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
 
         {/* Corpo com Rolagem Vertical Suave */}
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col overscroll-contain">
-          {/* Métricas e Resumo da Linha Selecionada */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 p-2.5 sm:p-4 bg-slate-900/60 border-b border-slate-800 text-xs flex-shrink-0">
+          {/* Mobile: Faixa Horizontal Compacta de Métricas (apenas ~55px de altura) */}
+          <div className="flex sm:hidden overflow-x-auto gap-2 p-2 bg-slate-900/90 border-b border-slate-800 visible-h-scrollbar flex-shrink-0">
+            <div className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/80 min-w-[105px]">
+              <div className="text-[9px] uppercase font-bold text-slate-400">Lançamentos</div>
+              <div className="text-sm font-black text-white">{totalEntriesCount} reg.</div>
+            </div>
+            <div className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-blue-500/15 border border-blue-500/40 min-w-[130px]">
+              <div className="text-[9px] uppercase font-bold text-blue-300">Realizado (ERP)</div>
+              <div className="text-sm font-black text-blue-400 font-mono">{formatBRL(line.realizado)}</div>
+            </div>
+            <div className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/80 min-w-[130px]">
+              <div className="text-[9px] uppercase font-bold text-slate-400">Orçado DRE</div>
+              <div className="text-sm font-black text-slate-200 font-mono">{formatBRL(line.orcado)}</div>
+            </div>
+            <div className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/80 min-w-[130px]">
+              <div className="text-[9px] uppercase font-bold text-slate-400">Variação</div>
+              <div className={`text-sm font-black font-mono ${isFavorable ? 'text-emerald-400' : 'text-red-400'}`}>
+                {line.variacao > 0 ? `+${formatBRL(line.variacao)}` : formatBRL(line.variacao)}
+              </div>
+            </div>
+            <div className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/80 min-w-[130px]">
+              <div className="text-[9px] uppercase font-bold text-slate-400">Valor Médio</div>
+              <div className="text-sm font-black text-amber-300 font-mono">
+                {formatBRL(totalEntriesCount > 0 ? totalEntriesSum / totalEntriesCount : 0)}
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop: Grid Completo com 5 Cards */}
+          <div className="hidden sm:grid sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4 bg-slate-900/60 border-b border-slate-800 text-xs flex-shrink-0">
             {/* Total de Lançamentos */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800/50 border border-slate-700/60">
-              <div className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+            <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60">
+              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                 Total Lançamentos
               </div>
-              <div className="text-base sm:text-lg font-black text-white mt-0.5">
+              <div className="text-lg font-black text-white mt-0.5">
                 {totalEntriesCount}{' '}
                 <span className="text-[10px] font-normal text-slate-400">registros</span>
               </div>
@@ -233,11 +263,11 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
             </div>
 
             {/* Realizado ERP (Soma dos Lançamentos) */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-blue-500/10 border border-blue-500/30">
-              <div className="text-[9px] sm:text-[10px] uppercase font-bold text-blue-300 tracking-wider">
+            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30">
+              <div className="text-[10px] uppercase font-bold text-blue-300 tracking-wider">
                 Realizado na DRE (ERP)
               </div>
-              <div className="text-base sm:text-lg font-black text-blue-400 mt-0.5 font-mono">
+              <div className="text-lg font-black text-blue-400 mt-0.5 font-mono">
                 {formatBRL(line.realizado)}
               </div>
               <div className="text-[10px] text-blue-300/80 mt-0.5">
@@ -246,11 +276,11 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
             </div>
 
             {/* Orçado na DRE */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800/50 border border-slate-700/60">
-              <div className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+            <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60">
+              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                 Orçado Aprovado
               </div>
-              <div className="text-base sm:text-lg font-black text-slate-200 mt-0.5 font-mono">
+              <div className="text-lg font-black text-slate-200 mt-0.5 font-mono">
                 {formatBRL(line.orcado)}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
@@ -259,12 +289,12 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
             </div>
 
             {/* Variação */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800/50 border border-slate-700/60">
-              <div className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+            <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60">
+              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                 Variação (Orç x Real)
               </div>
               <div
-                className={`text-base sm:text-lg font-black mt-0.5 font-mono ${
+                className={`text-lg font-black mt-0.5 font-mono ${
                   isFavorable ? 'text-emerald-400' : 'text-red-400'
                 }`}
               >
@@ -276,11 +306,11 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
             </div>
 
             {/* Ticket Médio por Lançamento */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 col-span-2 sm:col-span-1">
-              <div className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+            <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 col-span-2 sm:col-span-1">
+              <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                 Valor Médio / Lançamento
               </div>
-              <div className="text-base sm:text-lg font-black text-amber-300 mt-0.5 font-mono">
+              <div className="text-lg font-black text-amber-300 mt-0.5 font-mono">
                 {formatBRL(totalEntriesCount > 0 ? totalEntriesSum / totalEntriesCount : 0)}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
@@ -379,7 +409,18 @@ export const DreAccountEntriesCard: React.FC<DreAccountEntriesCardProps> = ({ li
           </div>
 
           {/* Conteúdo: Tabela com Barra de Rolagem Visível OU Cards Responsivos */}
-          <div className="p-2 sm:p-4 flex-1">
+          <div className="p-2.5 sm:p-4 flex-1 min-h-[320px]">
+            {/* Título da Seção de Lançamentos */}
+            <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-800">
+              <span className="text-xs font-bold text-white flex items-center space-x-1.5">
+                <FileText className="w-3.5 h-3.5 text-blue-400" />
+                <span>Lançamentos Contábeis Realizados ({sortedEntries.length})</span>
+              </span>
+              <span className="text-[11px] text-slate-400 font-mono">
+                Soma: <strong className="text-blue-400">{formatBRL(filteredSum)}</strong>
+              </span>
+            </div>
+
             {sortedEntries.length === 0 ? (
               <div className="p-8 text-center space-y-2">
                 <AlertCircle className="w-8 h-8 text-slate-500 mx-auto" />
