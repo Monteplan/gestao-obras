@@ -374,6 +374,7 @@ export interface LaborEntry {
 }
 
 export type ErpImportType = 
+  | 'unified_erp_ledger'
   | 'works' 
   | 'budget' 
   | 'budget_accounts'
@@ -391,6 +392,16 @@ export type ErpImportType =
   | 'labor'
   | 'incc'
   | 'prazos_etapas';
+
+export interface UnmappedAccountItem {
+  accountName: string;
+  count: number;
+  totalAmount: number;
+  groupingCodes: string[];
+  suggestedNature: 'custo_obra' | 'despesa_adm' | 'receita' | 'rendimento' | 'imposto_dre';
+  targetAdjustedAccount: string;
+  targetBudgetStage?: string;
+}
 
 export type DeduplicationStrategy = 'insert_new' | 'update_existing' | 'reject_duplicates';
 

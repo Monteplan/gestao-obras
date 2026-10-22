@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { formatBRL, formatPercent, formatDateBR, calculateFinancials, calculateWorkHealth, buildStageHierarchy } from '../../lib/utils';
+import { formatBRL, formatPercent, formatDateBR, calculateFinancials, calculateWorkHealth, buildStageHierarchy, calculateWeightedProgress } from '../../lib/utils';
 import {
   ArrowLeft,
   Building2,
@@ -118,8 +118,10 @@ export const WorkDetailPage: React.FC<WorkDetailPageProps> = ({ workId, onBack, 
   const financials = calculateFinancials(work, budgetItems, orders, incurredCosts, revenues);
   const health = calculateWorkHealth(work, financials, stages);
 
-  // Normalização do percentual de avanço físico caso venha multiplicado por 100
-  const rawProgress = work.progress_percent || 0;
+  // Normalização do percentual de avanço físico calculando dinamicamente a partir das etapas
+  const currentWorkStages = stages.filter((s) => s.work_id === workId || (work.id === 'work-1' && s.work_id === 'work-1'));
+  const calculatedWorkProgress = currentWorkStages.length > 0 ? calculateWeightedProgress(currentWorkStages) : (work.progress_percent || 0);
+  const rawProgress = calculatedWorkProgress > 0 ? calculatedWorkProgress : (work.progress_percent || 0);
   const displayProgress = rawProgress > 100 ? rawProgress / 100 : rawProgress;
 
   const isAtriumWork = work.id === 'work-1' || work.code === 'OBR-001' || work.name.toLowerCase().includes('atrium');

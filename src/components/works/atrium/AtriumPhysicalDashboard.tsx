@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Work, MonthlyPlannedPeriod } from '../../../types';
+import { Work, MonthlyPlannedPeriod, Stage } from '../../../types';
 import { ATRIUM_PCO_STAGES } from '../../../lib/atrium-pco-data';
+import { useData } from '../../../contexts/DataContext';
+import { calculateWeightedProgress } from '../../../lib/utils';
 import {
   TrendingUp,
   Activity,
@@ -17,6 +19,9 @@ import {
   Search,
   Filter,
   FileSpreadsheet,
+  Edit3,
+  X,
+  Save,
 } from 'lucide-react';
 import { DataProvenanceBadge } from '../../common/DataProvenanceBadge';
 
@@ -29,41 +34,77 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
   work,
   macroPeriods = [],
 }) => {
+  const { stages, updateStageProgress } = useData();
   const [activeTab, setActiveTab] = useState<'geral' | 'diretos' | 'indiretos' | 'curva_s'>('geral');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Indicadores de Controle Físico Real da Atrium (Aba PLANEJAMENTO MACRO)
-  const rawProg = work.progress_percent || 46.22;
-  const execAcc = rawProg > 100 ? Number((rawProg / 100).toFixed(2)) : Number(rawProg.toFixed(2));
+  // Modal de Edição Rápida de Progresso da Etapa
+  const [editingStage, setEditingStage] = useState<{ id: string; code: string; name: string; progress: number } | null>(null);
+  const [editPercentInput, setEditPercentInput] = useState<string>('0');
+  const [editReason, setEditReason] = useState<string>('');
+
+  // 1. Obter etapas ativas da obra no DataContext (com fallback para os dados de seed se ainda não carregados)
+  const workStages = stages.filter((s) => s.work_id === work.id || s.work_id === 'work-1');
+  const activeRootStages = workStages.filter((s) => !s.parent_id);
+  const currentRootList = activeRootStages.length > 0 ? activeRootStages : ATRIUM_PCO_STAGES.filter((s) => !s.parent_id);
+
+  // 2. Cálculo do Avanço Físico Ponderado Total da Obra em Tempo Real
+  const dynamicWeightedProgress = activeRootStages.length > 0
+    ? calculateWeightedProgress(activeRootStages)
+    : (work.progress_percent || 46.22);
+  const execAcc = dynamicWeightedProgress > 100
+    ? Number((dynamicWeightedProgress / 100).toFixed(2))
+    : Number(dynamicWeightedProgress.toFixed(2));
+
   const plannedAcc = 48.59; // 48,5864% (Set/2026)
-  const physicalDeviation = Number((execAcc - plannedAcc).toFixed(2)); // -2,37 p.p.
-  const physicalBalance = Number((100 - execAcc).toFixed(2)); // 53,78%
+  const physicalDeviation = Number((execAcc - plannedAcc).toFixed(2));
+  const physicalBalance = Number(Math.max(0, 100 - execAcc).toFixed(2));
   const executedMonth = 2.56; // 2,5631% no mês
 
-  // Divisão Indiretos vs Diretos
+  // 3. Divisão Dinâmica de Indiretos (< 6.0) vs Diretos (>= 6.0)
+  const indirectStages = currentRootList.filter((s) => parseInt(s.code, 10) < 6);
+  const directStages = currentRootList.filter((s) => parseInt(s.code, 10) >= 6);
+
+  // Soma ponderada das etapas indiretas
+  const indWeight = indirectStages.length > 0
+    ? Number(indirectStages.reduce((acc, s) => acc + (s.weight_percent || 0), 0).toFixed(4))
+    : 17.5851;
+  const indWeightedContribution = indirectStages.length > 0
+    ? Number((indirectStages.reduce((acc, s) => acc + (s.progress_percent || 0) * (s.weight_percent || 0), 0) / 100).toFixed(4))
+    : 10.7156;
+
+  // Soma ponderada das etapas diretas
+  const dirWeight = directStages.length > 0
+    ? Number(directStages.reduce((acc, s) => acc + (s.weight_percent || 0), 0).toFixed(4))
+    : 82.4149;
+  const dirWeightedContribution = directStages.length > 0
+    ? Number((directStages.reduce((acc, s) => acc + (s.progress_percent || 0) * (s.weight_percent || 0), 0) / 100).toFixed(4))
+    : 35.4997;
+
   const indirects = {
     budget: 4520310.52,
-    weight: 17.5851,
+    weight: indWeight,
     executedPrev: 10.2661,
     executedMonth: 0.4495,
-    executedAcc: 10.7156,
-    balance: 6.8695,
+    executedAcc: indWeightedContribution,
+    balance: Number(Math.max(0, indWeight - indWeightedContribution).toFixed(4)),
   };
 
   const directs = {
     budget: 21185048.96,
-    weight: 82.4149,
+    weight: dirWeight,
     executedPrev: 33.3861,
     executedMonth: 2.1136,
-    executedAcc: 35.4997,
-    balance: 46.9152,
+    executedAcc: dirWeightedContribution,
+    balance: Number(Math.max(0, dirWeight - dirWeightedContribution).toFixed(4)),
   };
 
-  // 23 Macroetapas Reais Importadas da Planilha PCO (Abertura % INDIRETOS e % DIRETOS)
-  const macroStages = ATRIUM_PCO_STAGES.filter((s) => !s.parent_id).map((s) => {
+  // 4. Lista consolidada das 23 Macroetapas conectadas ao DataContext
+  const macroStages = currentRootList.map((s) => {
     const codeNum = parseInt(s.code, 10);
     const isDirect = codeNum >= 6;
     return {
+      id: s.id,
       code: s.code.replace('.0', '').padStart(2, '0'),
       name: s.name,
       weight: s.weight_percent,
@@ -73,7 +114,7 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
     };
   });
 
-  const filteredStages = macroStages.filter(s => {
+  const filteredStages = macroStages.filter((s) => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.code.includes(searchTerm);
     if (!matchesSearch) return false;
     if (activeTab === 'diretos') return s.isDirect;
@@ -81,9 +122,17 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
     return true;
   });
 
+  const handleSaveProgress = () => {
+    if (!editingStage) return;
+    const numVal = parseFloat(editPercentInput.replace(',', '.'));
+    if (isNaN(numVal) || numVal < 0 || numVal > 100) return;
+    updateStageProgress(editingStage.id, numVal, editReason || 'Atualização rápida de progresso físico');
+    setEditingStage(null);
+  };
+
   // Curva S Mock/Real de períodos caso macroPeriods esteja vazio
   const sCurvePeriods = macroPeriods.length > 0 ? macroPeriods : [
-    { period_key: '2026-09', period_label: 'Set/26', planned_percent_month: 2.37, planned_percent_accumulated: 48.59, actual_percent_accumulated: 46.22 },
+    { period_key: '2026-09', period_label: 'Set/26', planned_percent_month: 2.37, planned_percent_accumulated: 48.59, actual_percent_accumulated: execAcc },
     { period_key: '2026-10', period_label: 'Out/26', planned_percent_month: 2.69, planned_percent_accumulated: 51.28 },
     { period_key: '2026-11', period_label: 'Nov/26', planned_percent_month: 2.91, planned_percent_accumulated: 54.19 },
     { period_key: '2026-12', period_label: 'Dez/26', planned_percent_month: 2.75, planned_percent_accumulated: 56.94 },
@@ -406,7 +455,8 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
                 <th className="p-3 text-right">Peso Físico</th>
                 <th className="p-3 text-right">Executado Acum.</th>
                 <th className="p-3 text-center">Status</th>
-                <th className="p-3 w-36">Barra de Progresso</th>
+                <th className="p-3 w-32">Barra de Progresso</th>
+                <th className="p-3 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -446,12 +496,101 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
                       />
                     </div>
                   </td>
+                  <td className="p-3 text-center">
+                    <button
+                      onClick={() => {
+                        setEditingStage({ id: s.id, code: s.code, name: s.name, progress: s.progress });
+                        setEditPercentInput(s.progress.toString());
+                        setEditReason('');
+                      }}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-cyan-600/20 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/30 text-[11px] font-semibold inline-flex items-center gap-1 transition-all"
+                      title="Editar avanço físico desta etapa"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Editar</span>
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Modal de Apontamento Rápido de Progresso */}
+      {editingStage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-cyan-400" />
+                  <span>Apontar Avanço Físico</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Etapa <strong className="text-cyan-300">{editingStage.code}</strong> - {editingStage.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingStage(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Novo Percentual Executado (%)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={editPercentInput}
+                  onChange={(e) => setEditPercentInput(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono font-bold focus:outline-none focus:border-cyan-500"
+                  autoFocus
+                />
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  Valor anterior: {editingStage.progress.toFixed(2)}%
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Observação / Justificativa da Medição
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ex: Medição quinzenal de campo, vistoria realizada..."
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setEditingStage(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveProgress}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center gap-1.5 transition-all shadow-md shadow-cyan-500/20"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Salvar e Recalcular</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

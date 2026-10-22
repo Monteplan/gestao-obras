@@ -52,6 +52,7 @@ import { calculateWeightedProgress, calculatePhysicalProgressWeighted, simulateI
 import { useAuth } from './AuthContext';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { fetchAllFromSupabase, saveImportedEntriesToSupabase } from '../lib/supabase-sync';
+import { DeParaRule } from '../lib/atrium-real-data';
 
 interface DataContextType {
   // Supabase Cloud Sync Status
@@ -155,6 +156,9 @@ interface DataContextType {
     rows: Record<string, any>[],
     strategy: DeduplicationStrategy
   ) => { batch: ErpImportBatch; errors: ErpImportError[] };
+  customDeParaRules: DeParaRule[];
+  addCustomDeParaRule: (rule: DeParaRule) => void;
+  applyUnifiedErpImportResult: (data: { newCosts: IncurredCost[]; newRevenues: Revenue[]; batch: ErpImportBatch }) => void;
 
   // PCO Import Engine
   pcoImportProfiles: PcoImportProfile[];
@@ -233,6 +237,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [physicalProgressEntries, setPhysicalProgressEntries] = useState<PhysicalProgressEntry[]>(() => loadInitial('physical_progress_entries', INITIAL_PHYSICAL_PROGRESS_ENTRIES));
   const [stageProgressHistory, setStageProgressHistory] = useState<StageProgressHistory[]>(() => loadInitial('stage_progress_history', INITIAL_STAGE_PROGRESS_HISTORY));
   const [inccAdjustments, setInccAdjustments] = useState<BudgetIndexAdjustment[]>(() => loadInitial('incc_adjustments', []));
+  const [customDeParaRules, setCustomDeParaRules] = useState<DeParaRule[]>(() => loadInitial('custom_depara_rules', []));
 
   // Estados de Sincronização com Supabase Cloud
   const [isSyncingWithSupabase, setIsSyncingWithSupabase] = useState<boolean>(false);
@@ -254,7 +259,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (result.works.length > 0) {
           setWorks(prev => {
             const others = prev.filter(w => w.code !== 'OBR-001' && w.id !== 'work-1');
-            return [result.works[0], ...others];
+            const fetchedWork = result.works[0];
+            const activeWorkStages = stages.filter(s => s.work_id === fetchedWork.id || s.work_id === 'work-1');
+            const liveProg = activeWorkStages.length > 0 ? calculateWeightedProgress(activeWorkStages) : fetchedWork.progress_percent;
+            const consolidatedWork: Work = {
+              ...fetchedWork,
+              progress_percent: liveProg > 0 ? liveProg : fetchedWork.progress_percent,
+            };
+            return [consolidatedWork, ...others];
           });
         }
         if (result.incurredCosts.length > 0) {
@@ -311,6 +323,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_stage_progress_history`, JSON.stringify(stageProgressHistory)); }, [stageProgressHistory]);
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_incc_adjustments`, JSON.stringify(inccAdjustments)); }, [inccAdjustments]);
   useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_pco_profiles`, JSON.stringify(pcoImportProfiles)); }, [pcoImportProfiles]);
+  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_custom_depara_rules`, JSON.stringify(customDeParaRules)); }, [customDeParaRules]);
 
   const addAuditLog = (action: string, entity: string, entity_id?: string, details?: string) => {
     const log: SystemAuditLog = {
@@ -328,10 +341,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Recalcular avanço ponderado da obra
   const recalculateWorkProgress = (workId: string, currentStages: Stage[]) => {
-    const workStages = currentStages.filter(s => s.work_id === workId);
+    const workStages = currentStages.filter(s => s.work_id === workId || (workId === 'work-1' && s.work_id === 'work-1'));
     const weightedProgress = calculateWeightedProgress(workStages);
-    setWorks(prev => prev.map(w => w.id === workId ? { ...w, progress_percent: weightedProgress, updated_at: new Date().toISOString() } : w));
+    setWorks(prev => prev.map(w => (w.id === workId || (workId === 'work-1' && (w.id === 'work-1' || w.code === 'OBR-001'))) ? { ...w, progress_percent: weightedProgress, updated_at: new Date().toISOString() } : w));
   };
+
+  // Efeito reativo: garante que qualquer alteração nas etapas atualize o progresso da obra imediatamente
+  useEffect(() => {
+    if (stages.length > 0) {
+      setWorks(prevWorks => {
+        let changed = false;
+        const updated = prevWorks.map(w => {
+          const wStages = stages.filter(s => s.work_id === w.id || (w.id === 'work-1' && s.work_id === 'work-1'));
+          if (wStages.length > 0) {
+            const wp = calculateWeightedProgress(wStages);
+            if (wp > 0 && Math.abs(wp - (w.progress_percent || 0)) > 0.001) {
+              changed = true;
+              return { ...w, progress_percent: wp, updated_at: new Date().toISOString() };
+            }
+          }
+          return w;
+        });
+        return changed ? updated : prevWorks;
+      });
+    }
+  }, [stages]);
 
   // Works CRUD
   const addWork = (data: Omit<Work, 'id' | 'created_at' | 'updated_at' | 'progress_percent'>): Work => {
@@ -598,13 +632,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }).eq('parent_id', target.id);
           }
 
-          // Atualizar o avanço geral da obra na tabela works do Supabase
-          const updatedWorkStages = nextStages.filter(s => s.work_id === target.work_id);
+          // Atualizar o avanço geral da obra na tabela works do Supabase (compatível com id ou code)
+          const updatedWorkStages = nextStages.filter(s => s.work_id === target.work_id || (target.work_id === 'work-1' && s.work_id === 'work-1'));
           const finalWorkProgress = calculateWeightedProgress(updatedWorkStages);
           await supabase.from('works').update({
             progress_percent: finalWorkProgress,
             updated_at: new Date().toISOString(),
-          }).eq('id', target.work_id);
+          }).or(`id.eq.${target.work_id},code.eq.OBR-001`);
 
           // Inserir registro na trilha de auditoria
           await supabase.from('audit_logs').insert([{
@@ -867,6 +901,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteErpToBudgetTotalizerMapping = (id: string) => {
     setErpToBudgetTotalizerMappings(prev => prev.filter(m => m.id !== id));
     addAuditLog('Excluir De-Para 2', 'erp_to_budget_totalizer_mappings', id, 'Mapeamento De-Para 2 removido');
+  };
+
+  const addCustomDeParaRule = (rule: DeParaRule) => {
+    setCustomDeParaRules(prev => [...prev.filter(r => r.originalAccount.toLowerCase() !== rule.originalAccount.toLowerCase()), rule]);
+    addErpToBudgetTotalizerMapping({
+      work_id: 'work-1',
+      detailed_erp_account_id: `erp-${Date.now()}`,
+      detailed_erp_account_description: rule.originalAccount,
+      totalizer_erp_account_id: `tot-${Date.now()}`,
+      totalizer_erp_account_description: rule.adjustedAccount,
+      is_active: true,
+    });
+  };
+
+  const applyUnifiedErpImportResult = (data: { newCosts: IncurredCost[]; newRevenues: Revenue[]; batch: ErpImportBatch }) => {
+    if (data.newCosts.length > 0) {
+      setIncurredCosts(prev => [...data.newCosts, ...prev]);
+    }
+    if (data.newRevenues.length > 0) {
+      setRevenues(prev => [...data.newRevenues, ...prev]);
+    }
+    setImportBatches(prev => [data.batch, ...prev]);
+    addAuditLog('Importação Unificada ERP', 'actual_financial_entries', data.batch.id, `${data.newCosts.length} custos e ${data.newRevenues.length} receitas importados.`);
   };
 
   // Medições Físicas
@@ -1491,6 +1548,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addLaborEntry,
         updateLaborEntryStatus,
         processErpImport,
+        customDeParaRules,
+        addCustomDeParaRule,
+        applyUnifiedErpImportResult,
         resetToSeedData,
         isSyncingWithSupabase,
         supabaseSyncStatus,
