@@ -23,7 +23,15 @@ import {
   Smartphone,
   Laptop,
   Sparkles,
+  UserPlus,
+  Trash2,
+  X,
+  Lock,
+  Mail,
+  UserCheck,
 } from 'lucide-react';
+import { UserRole, UserProfile } from '../../types';
+import { supabase, logAudit } from '../../lib/supabase';
 import { DeParaMatrixSettings } from './DeParaMatrixSettings';
 
 export const SettingsPage: React.FC = () => {
@@ -38,12 +46,117 @@ export const SettingsPage: React.FC = () => {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Estados de Gerenciamento de Usuários
+  const [userProfiles, setUserProfiles] = useState<UserProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem('gestao_obras_v2_user_profiles');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Erro ao carregar perfis de usuários:', e);
+    }
+    return INITIAL_PROFILES;
+  });
+
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('engenharia');
+  const [newUserOrg, setNewUserOrg] = useState('Monteplan Engenharia');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [userSuccessMessage, setUserSuccessMessage] = useState<string | null>(null);
+  const [userErrorMessage, setUserErrorMessage] = useState<string | null>(null);
+
   const isCloudSupabase = isSupabaseConfigured();
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
+  };
+
+  const handleAddUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserErrorMessage(null);
+
+    const emailTrim = newUserEmail.trim().toLowerCase();
+    if (!emailTrim || !emailTrim.includes('@')) {
+      setUserErrorMessage('Informe um e-mail corporativo válido com @.');
+      return;
+    }
+
+    if (userProfiles.some(u => u.email.toLowerCase() === emailTrim)) {
+      setUserErrorMessage('Já existe um usuário cadastrado com este e-mail.');
+      return;
+    }
+
+    const newUser: UserProfile = {
+      id: 'usr-' + Date.now(),
+      name: newUserName.trim() || emailTrim.split('@')[0],
+      email: emailTrim,
+      role: newUserRole,
+      organization_id: 'org-1',
+      organization_name: newUserOrg.trim() || 'Monteplan Engenharia',
+    };
+
+    const updated = [newUser, ...userProfiles];
+    setUserProfiles(updated);
+    localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(updated));
+
+    // Registro na Trilha de Auditoria
+    logAudit('CREATE_USER', 'users', newUser.id, `Novo usuário criado: ${newUser.name} (${newUser.email}) - Perfil: ${newUser.role}`);
+
+    // Integração não-bloqueante com Supabase se configurado
+    if (isSupabaseConfigured() && supabase) {
+      Promise.resolve(
+        supabase.from('profiles').upsert({
+          id: newUser.id,
+          email: newUser.email,
+          full_name: newUser.name,
+          role: newUser.role,
+          organization_id: newUser.organization_id,
+          created_at: new Date().toISOString()
+        })
+      )
+        .then(() => {})
+        .catch(console.warn);
+    }
+
+    setShowAddUserModal(false);
+    setNewUserName('');
+    setNewUserEmail('');
+    setNewUserRole('engenharia');
+    setNewUserPassword('');
+    setUserSuccessMessage(`Usuário "${newUser.name}" incluído com sucesso!`);
+    setTimeout(() => setUserSuccessMessage(null), 4000);
+  };
+
+  const handleDeleteUser = (userId: string, userName: string) => {
+    if (confirm(`Deseja realmente remover o usuário "${userName}" do sistema?`)) {
+      const updated = userProfiles.filter(u => u.id !== userId);
+      setUserProfiles(updated);
+      localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(updated));
+      logAudit('DELETE_USER', 'users', userId, `Usuário removido: ${userName}`);
+      setUserSuccessMessage(`Usuário "${userName}" removido com sucesso.`);
+      setTimeout(() => setUserSuccessMessage(null), 3000);
+    }
+  };
+
+  const getRoleBadge = (r: UserRole) => {
+    switch (r) {
+      case 'admin':
+        return { label: 'Admin Geral', color: 'bg-purple-500/20 text-purple-300 border border-purple-500/40' };
+      case 'gestor':
+        return { label: 'Gestor de Obras', color: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40' };
+      case 'engenharia':
+        return { label: 'Engenheiro de Campo', color: 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' };
+      case 'compras':
+        return { label: 'Compras & Suprimentos', color: 'bg-amber-500/20 text-amber-300 border border-amber-500/40' };
+      case 'financeiro':
+        return { label: 'Financeiro & Controladoria', color: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' };
+      case 'consulta':
+      default:
+        return { label: 'Somente Leitura', color: 'bg-slate-500/20 text-slate-300 border border-slate-500/40' };
+    }
   };
 
   return (
@@ -408,48 +521,265 @@ export const SettingsPage: React.FC = () => {
 
       {/* ABA 2: USUÁRIOS E PERFIS DE ACESSO */}
       {activeTab === 'usuarios' && (
-        <div className="glass-card rounded-2xl border border-slate-800 overflow-hidden">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="glass-card rounded-2xl border border-slate-800 overflow-hidden space-y-0">
+          <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/40">
             <div>
-              <h3 className="text-sm font-bold text-white">Usuários do Sistema e Matriz de Permissões</h3>
-              <p className="text-[11px] text-slate-400">Controle de acesso baseado em papéis (RBAC)</p>
+              <div className="flex items-center space-x-2">
+                <Users className="w-5 h-5 text-[#38bdf8]" />
+                <h3 className="text-base font-bold text-white tracking-tight">Gerenciador de Usuários e Permissões</h3>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Controle de acesso granular baseado em papéis (RBAC) com permissões por módulo da Monteplan.
+              </p>
             </div>
-            <span className="text-xs px-2.5 py-1 rounded-full bg-[#004171]/30 text-[#38bdf8] font-bold border border-[#1c3e5c]">
-              {INITIAL_PROFILES.length} usuários ativos
-            </span>
+            
+            <div className="flex items-center space-x-3">
+              <span className="text-xs px-3 py-1 rounded-full bg-[#004171]/40 text-[#38bdf8] font-bold border border-[#1c3e5c] shadow-sm">
+                {userProfiles.length} usuários cadastrados
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUserErrorMessage(null);
+                  setShowAddUserModal(true);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#004171] to-[#0a548c] hover:from-[#0a548c] hover:to-[#004171] text-white font-bold text-xs flex items-center space-x-1.5 shadow-md shadow-[#004171]/40 border border-[#38bdf8]/40 transition-all transform active:scale-95 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 text-[#38bdf8]" />
+                <span>+ Novo Usuário</span>
+              </button>
+            </div>
           </div>
+
+          {userSuccessMessage && (
+            <div className="mx-4 my-3 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs flex items-center space-x-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <span>{userSuccessMessage}</span>
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900 text-slate-400 uppercase text-[10px]">
+              <thead className="bg-slate-900/90 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
                 <tr>
-                  <th className="p-3">Nome do Usuário</th>
-                  <th className="p-3">E-mail Corporativo</th>
-                  <th className="p-3">Perfil de Acesso</th>
-                  <th className="p-3">Empresa / Tenant</th>
-                  <th className="p-3 text-center">Status</th>
+                  <th className="p-3.5">Usuário</th>
+                  <th className="p-3.5">E-mail Corporativo</th>
+                  <th className="p-3.5">Perfil de Acesso</th>
+                  <th className="p-3.5">Empresa / Tenant</th>
+                  <th className="p-3.5 text-center">Status</th>
+                  <th className="p-3.5 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
-                {INITIAL_PROFILES.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-800/30">
-                    <td className="p-3 font-semibold text-white">{p.name}</td>
-                    <td className="p-3 text-slate-400 font-mono">{p.email}</td>
-                    <td className="p-3">
-                      <span className="px-2 py-0.5 rounded-md bg-blue-600/20 text-blue-400 font-bold uppercase text-[10px]">
-                        {p.role}
-                      </span>
-                    </td>
-                    <td className="p-3 text-slate-400">{p.organization_name}</td>
-                    <td className="p-3 text-center">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
-                        Ativo
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-800/60">
+                {userProfiles.map((p) => {
+                  const badge = getRoleBadge(p.role);
+                  const isCurrentLogged = user?.email?.toLowerCase() === p.email.toLowerCase();
+                  const isDefaultSeed = INITIAL_PROFILES.some(init => init.id === p.id);
+
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-3.5">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#004171] to-[#0a548c] text-white font-bold text-xs flex items-center justify-center border border-[#38bdf8]/30 shadow-sm">
+                            {p.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-white block text-xs">
+                              {p.name}
+                              {isCurrentLogged && (
+                                <span className="ml-1.5 text-[10px] font-medium text-[#38bdf8] bg-[#38bdf8]/10 px-1.5 py-0.2 rounded border border-[#38bdf8]/30">
+                                  Você
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3.5 text-slate-300 font-mono text-xs">{p.email}</td>
+                      <td className="p-3.5">
+                        <span className={`px-2.5 py-1 rounded-md font-bold uppercase text-[10px] inline-flex items-center space-x-1 ${badge.color}`}>
+                          <span>{badge.label}</span>
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-slate-400">{p.organization_name || 'Monteplan Engenharia'}</td>
+                      <td className="p-3.5 text-center">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          Ativo
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-right">
+                        {!isCurrentLogged && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(p.id, p.name)}
+                            title="Remover usuário"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cadastro de Novo Usuário */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="glass-panel w-full max-w-lg p-6 rounded-2xl border border-[#1c3e5c] shadow-2xl relative space-y-4">
+            <button
+              type="button"
+              onClick={() => setShowAddUserModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center space-x-3 border-b border-slate-800 pb-3">
+              <div className="w-10 h-10 rounded-xl bg-[#004171]/40 border border-[#38bdf8]/40 text-[#38bdf8] flex items-center justify-center">
+                <UserPlus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Cadastrar Novo Usuário</h3>
+                <p className="text-xs text-slate-400">Permita o acesso à plataforma e configure as permissões de acesso.</p>
+              </div>
+            </div>
+
+            {userErrorMessage && (
+              <div className="p-2.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-medium flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{userErrorMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddUser} className="space-y-4 pt-1">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Nome Completo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="Ex: Engenheiro Silva"
+                  className="w-full px-3 py-2 rounded-xl glass-input text-xs text-white focus:border-[#38bdf8]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  E-mail Corporativo *
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="email"
+                    required
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="usuario@monteplan.com.br"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl glass-input text-xs text-white focus:border-[#38bdf8]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Perfil de Acesso (RBAC) *
+                  </label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 rounded-xl glass-input text-xs text-white bg-slate-900 border border-slate-700 focus:border-[#38bdf8]"
+                  >
+                    <option value="engenharia">Engenheiro de Campo</option>
+                    <option value="gestor">Gestor de Obras</option>
+                    <option value="compras">Compras & Suprimentos</option>
+                    <option value="financeiro">Financeiro & Controladoria</option>
+                    <option value="admin">Administrador Geral</option>
+                    <option value="consulta">Somente Leitura</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Empresa / Tenant
+                  </label>
+                  <input
+                    type="text"
+                    value={newUserOrg}
+                    onChange={(e) => setNewUserOrg(e.target.value)}
+                    placeholder="Monteplan Engenharia"
+                    className="w-full px-3 py-2 rounded-xl glass-input text-xs text-white focus:border-[#38bdf8]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Senha Provisória de Acesso
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="password"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                    placeholder="Mínimo 6 dígitos (ou definida pelo usuário no 1º login)"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl glass-input text-xs text-white focus:border-[#38bdf8]"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  O usuário poderá também redefinir sua senha a qualquer momento clicando em "Esqueceu a senha?".
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                <span className="font-semibold text-slate-300 block">Permissões do Perfil Selecionado:</span>
+                {newUserRole === 'admin' && (
+                  <p className="text-purple-300">Acesso irrestrito a todos os módulos, configurações, matriz contábil e usuários.</p>
+                )}
+                {newUserRole === 'gestor' && (
+                  <p className="text-indigo-300">Gestão global de obras, controle físico-financeiro, avanço de etapas e medições.</p>
+                )}
+                {newUserRole === 'engenharia' && (
+                  <p className="text-cyan-300">Lançamento de avanço físico de etapas, subetapas, RDO e apontamentos de campo.</p>
+                )}
+                {newUserRole === 'compras' && (
+                  <p className="text-amber-300">Módulo de suprimentos, requisições, cotações e ordens de compra.</p>
+                )}
+                {newUserRole === 'financeiro' && (
+                  <p className="text-emerald-300">Custos incorridos, conciliação contábil, matriz de-para e demonstrativo de resultados.</p>
+                )}
+                {newUserRole === 'consulta' && (
+                  <p className="text-slate-300">Acesso de visualização de relatórios e dashboards, sem permissão de alteração.</p>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#004171] hover:bg-[#0a548c] text-white font-bold text-xs shadow-md shadow-[#004171]/40 flex items-center space-x-1.5 transition-all"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Cadastrar Usuário</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -524,6 +854,8 @@ export const SettingsPage: React.FC = () => {
               <button
                 onClick={() => {
                   resetToSeedData();
+                  setUserProfiles(INITIAL_PROFILES);
+                  localStorage.removeItem('gestao_obras_v2_user_profiles');
                   setShowResetConfirm(false);
                 }}
                 className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs"

@@ -69,7 +69,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Validação de Contas Corporativas Monteplan / Demo
+    // 1. Validação de Usuários cadastrados no Gerenciador de Usuários (Configurações)
+    try {
+      const storedCustom = localStorage.getItem('gestao_obras_v2_user_profiles');
+      if (storedCustom) {
+        const customList: UserProfile[] = JSON.parse(storedCustom);
+        const customMatch = customList.find(p => p.email.toLowerCase() === normalizedEmail);
+        if (customMatch) {
+          setUser(customMatch);
+          sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(customMatch));
+          return { success: true };
+        }
+      }
+    } catch {
+      // fallback silencioso
+    }
+
+    // 2. Validação de Contas Padrão Monteplan / Seed
     const found = INITIAL_PROFILES.find(p => p.email.toLowerCase() === normalizedEmail);
     if (found) {
       setUser(found);
@@ -123,7 +139,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const recoverPasswordStep1 = async (_email: string) => {
+  const recoverPasswordStep1 = async (email: string) => {
+    const normalized = (email || '').trim().toLowerCase();
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.auth.resetPasswordForEmail(normalized, {
+          redirectTo: window.location.origin,
+        });
+      } catch (e) {
+        console.warn('Erro ao solicitar recuperação via Supabase Auth:', e);
+      }
+    }
     return new Promise<{ success: boolean }>((resolve) => {
       setTimeout(() => resolve({ success: true }), 600);
     });
