@@ -76,6 +76,7 @@ export const ErpImporterPage: React.FC = () => {
     totalCostAmount: number;
     totalRevenueAmount: number;
     batchId: string;
+    supabaseWarning?: string;
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -362,6 +363,7 @@ export const ErpImporterPage: React.FC = () => {
           totalCostAmount: result.totalCostAmount,
           totalRevenueAmount: result.totalRevenueAmount,
           batchId: result.batch.id,
+          supabaseWarning: result.supabaseWarning,
         });
       } else {
         alert(result.error || 'Erro ao processar importação no Supabase.');
@@ -743,6 +745,23 @@ export const ErpImporterPage: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {unifiedSummary.supabaseWarning && (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start space-x-3 text-xs text-amber-200">
+              <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <strong className="block font-bold text-amber-300">
+                  Lançamentos Importados e Conciliados na Aplicação!
+                </strong>
+                <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                  Os lançamentos foram processados com sucesso no Demonstrativo DRE e no centro de custos. No Supabase Cloud, a gravação foi pausada pela política de segurança RLS (Row Level Security).
+                </p>
+                <p className="text-[11px] text-amber-300/90 font-medium">
+                  Para sincronizar também no banco do Supabase, execute o script SQL de permissões RLS no painel do Supabase.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

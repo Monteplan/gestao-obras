@@ -257,6 +257,7 @@ export async function executeUnifiedErpImport(
   totalCostAmount: number;
   totalRevenueAmount: number;
   batch: ErpImportBatch;
+  supabaseWarning?: string;
   error?: string;
 }> {
   const batchId = 'batch-erp-unified-' + Date.now();
@@ -402,14 +403,18 @@ export async function executeUnifiedErpImport(
 
     // 2. Inserção em lotes de 200 no Supabase
     let insertedEntriesCount = 0;
+    let supabaseWarning: string | undefined = undefined;
+
     if (entriesToInsertInDb.length > 0 && isSupabaseConfigured() && supabase) {
       const CHUNK_SIZE = 200;
       for (let i = 0; i < entriesToInsertInDb.length; i += CHUNK_SIZE) {
         const chunk = entriesToInsertInDb.slice(i, i + CHUNK_SIZE);
         const { error: insertErr } = await supabase.from('actual_financial_entries').insert(chunk);
         if (insertErr) {
-          console.error('[executeUnifiedErpImport] Erro ao inserir bloco no Supabase:', insertErr);
-          throw insertErr;
+          console.warn('[executeUnifiedErpImport] Aviso ao inserir bloco no Supabase (RLS ou permissão):', insertErr.message);
+          supabaseWarning = insertErr.message;
+          // Não aborta a aplicação: os dados já foram calculados para o DataContext e localStorage
+          break;
         }
         insertedEntriesCount += chunk.length;
       }
@@ -447,6 +452,7 @@ export async function executeUnifiedErpImport(
       totalCostAmount,
       totalRevenueAmount,
       batch,
+      supabaseWarning,
     };
   } catch (err: any) {
     console.error('[executeUnifiedErpImport] Erro na importação:', err);
