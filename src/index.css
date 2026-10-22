@@ -661,3 +661,44 @@ html.light ::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Barras de rolagem visíveis e táteis para mobile e desktop */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.45);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.8);
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.5) rgba(15, 23, 42, 0.7);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Barra de rolagem horizontal permanente e de alto contraste para tabelas no celular */
+.visible-h-scrollbar::-webkit-scrollbar {
+  height: 8px;
+}
+.visible-h-scrollbar::-webkit-scrollbar-track {
+  background: #0f2236;
+  border-radius: 9999px;
+  margin: 0 4px;
+}
+.visible-h-scrollbar::-webkit-scrollbar-thumb {
+  background: #38bdf8;
+  border-radius: 9999px;
+}
+.visible-h-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #38bdf8 #0f2236;
+  -webkit-overflow-scrolling: touch;
+}
+
