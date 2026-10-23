@@ -191,7 +191,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [requisitions, setRequisitions] = useState<PurchaseRequisition[]>(() => loadInitial('requisitions', INITIAL_PURCHASE_REQUISITIONS));
   const [orders, setOrders] = useState<PurchaseOrder[]>(() => loadInitial('orders', INITIAL_PURCHASE_ORDERS));
   const [receipts, setReceipts] = useState<Receipt[]>(() => loadInitial('receipts', INITIAL_RECEIPTS));
-  const [incurredCosts, setIncurredCosts] = useState<IncurredCost[]>(() => loadInitial('incurred_costs', INITIAL_INCURRED_COSTS));
+  const [incurredCosts, setIncurredCosts] = useState<IncurredCost[]>(() => {
+    const loaded = loadInitial('incurred_costs', INITIAL_INCURRED_COSTS);
+    if (Array.isArray(loaded) && loaded.length < INITIAL_INCURRED_COSTS.length) {
+      return INITIAL_INCURRED_COSTS;
+    }
+    return loaded;
+  });
   const [revenues, setRevenues] = useState<Revenue[]>(() => loadInitial('revenues', INITIAL_REVENUES));
   const [laborPeople, setLaborPeople] = useState<LaborPerson[]>(() => loadInitial('labor_people', INITIAL_LABOR_PEOPLE));
   const [laborEntries, setLaborEntries] = useState<LaborEntry[]>(() => loadInitial('labor_entries', INITIAL_LABOR_ENTRIES));
@@ -301,29 +307,66 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
 
-  // Sincronização automática com localStorage versionado
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_works`, JSON.stringify(works)); }, [works]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_stages`, JSON.stringify(stages)); }, [stages]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_budget_versions`, JSON.stringify(budgetVersions)); }, [budgetVersions]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_budget_items`, JSON.stringify(budgetItems)); }, [budgetItems]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_requisitions`, JSON.stringify(requisitions)); }, [requisitions]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_orders`, JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_receipts`, JSON.stringify(receipts)); }, [receipts]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_incurred_costs`, JSON.stringify(incurredCosts)); }, [incurredCosts]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_revenues`, JSON.stringify(revenues)); }, [revenues]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_labor_people`, JSON.stringify(laborPeople)); }, [laborPeople]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_labor_entries`, JSON.stringify(laborEntries)); }, [laborEntries]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_import_batches`, JSON.stringify(importBatches)); }, [importBatches]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_audit_logs`, JSON.stringify(auditLogs)); }, [auditLogs]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_budget_accounts`, JSON.stringify(budgetAccounts)); }, [budgetAccounts]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_erp_cost_accounts`, JSON.stringify(erpCostAccounts)); }, [erpCostAccounts]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_budget_to_erp_mappings`, JSON.stringify(budgetToErpMappings)); }, [budgetToErpMappings]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_erp_to_budget_totalizer_mappings`, JSON.stringify(erpToBudgetTotalizerMappings)); }, [erpToBudgetTotalizerMappings]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_physical_progress_entries`, JSON.stringify(physicalProgressEntries)); }, [physicalProgressEntries]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_stage_progress_history`, JSON.stringify(stageProgressHistory)); }, [stageProgressHistory]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_incc_adjustments`, JSON.stringify(inccAdjustments)); }, [inccAdjustments]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_pco_profiles`, JSON.stringify(pcoImportProfiles)); }, [pcoImportProfiles]);
-  useEffect(() => { localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_custom_depara_rules`, JSON.stringify(customDeParaRules)); }, [customDeParaRules]);
+  // Limpeza preventiva de versões antigas de cache para recuperar a cota de 5MB do navegador
+  useEffect(() => {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('gestao_obras_') && !k.startsWith(`gestao_obras_${SCHEMA_VERSION}_`)) {
+          if (k !== 'gestao_obras_v2_user_profiles' && k !== 'gestao_obras_session_user') {
+            keysToRemove.push(k);
+          }
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (e) {
+      console.warn('Erro ao limpar cache antigo:', e);
+    }
+  }, []);
+
+  // Função segura de gravação no localStorage protegida contra estouro de quota (5 MB)
+  const safeSave = (key: string, data: any) => {
+    try {
+      localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_${key}`, JSON.stringify(data));
+    } catch (err: any) {
+      console.warn(`[Storage Quota] Cache local atingiu o limite de 5MB ao salvar '${key}'. Os dados permanecem íntegros em memória e no Supabase:`, err);
+      // Para listas massivas com milhares de lançamentos, não quebra a interface
+      if (key === 'incurred_costs' && Array.isArray(data)) {
+        try {
+          // Salva apenas os 300 mais recentes no localStorage para manter a cota livre
+          const sample = data.slice(0, 300);
+          localStorage.setItem(`gestao_obras_${SCHEMA_VERSION}_${key}`, JSON.stringify(sample));
+        } catch {
+          // Mantém operacional em memória e nuvem sem lançar exceção
+        }
+      }
+    }
+  };
+
+  // Sincronização automática com localStorage protegido contra estouro de quota
+  useEffect(() => { safeSave('works', works); }, [works]);
+  useEffect(() => { safeSave('stages', stages); }, [stages]);
+  useEffect(() => { safeSave('budget_versions', budgetVersions); }, [budgetVersions]);
+  useEffect(() => { safeSave('budget_items', budgetItems); }, [budgetItems]);
+  useEffect(() => { safeSave('requisitions', requisitions); }, [requisitions]);
+  useEffect(() => { safeSave('orders', orders); }, [orders]);
+  useEffect(() => { safeSave('receipts', receipts); }, [receipts]);
+  useEffect(() => { safeSave('incurred_costs', incurredCosts); }, [incurredCosts]);
+  useEffect(() => { safeSave('revenues', revenues); }, [revenues]);
+  useEffect(() => { safeSave('labor_people', laborPeople); }, [laborPeople]);
+  useEffect(() => { safeSave('labor_entries', laborEntries); }, [laborEntries]);
+  useEffect(() => { safeSave('import_batches', importBatches); }, [importBatches]);
+  useEffect(() => { safeSave('audit_logs', auditLogs); }, [auditLogs]);
+  useEffect(() => { safeSave('budget_accounts', budgetAccounts); }, [budgetAccounts]);
+  useEffect(() => { safeSave('erp_cost_accounts', erpCostAccounts); }, [erpCostAccounts]);
+  useEffect(() => { safeSave('budget_to_erp_mappings', budgetToErpMappings); }, [budgetToErpMappings]);
+  useEffect(() => { safeSave('erp_to_budget_totalizer_mappings', erpToBudgetTotalizerMappings); }, [erpToBudgetTotalizerMappings]);
+  useEffect(() => { safeSave('physical_progress_entries', physicalProgressEntries); }, [physicalProgressEntries]);
+  useEffect(() => { safeSave('stage_progress_history', stageProgressHistory); }, [stageProgressHistory]);
+  useEffect(() => { safeSave('incc_adjustments', inccAdjustments); }, [inccAdjustments]);
+  useEffect(() => { safeSave('pco_profiles', pcoImportProfiles); }, [pcoImportProfiles]);
+  useEffect(() => { safeSave('custom_depara_rules', customDeParaRules); }, [customDeParaRules]);
 
   const addAuditLog = (action: string, entity: string, entity_id?: string, details?: string) => {
     const log: SystemAuditLog = {

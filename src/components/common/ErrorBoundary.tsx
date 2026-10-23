@@ -37,8 +37,16 @@ export class ErrorBoundary extends Component<Props, State> {
   private handleReset = () => {
     try {
       sessionStorage.clear();
-      // Não limpa o localStorage inteiro para não perder dados, mas limpa cache de tela
       localStorage.removeItem('gestao_obras_auth_user');
+      // Limpa chaves pesadas que causam estouro de quota de 5MB
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.includes('incurred_costs') || k.includes('audit_logs') || k.includes('last_error'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
     } catch {}
     window.location.reload();
   };
@@ -53,6 +61,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      const isQuotaError = this.state.error?.message?.toLowerCase().includes('quota') ||
+        this.state.error?.name === 'QuotaExceededError';
+
       return (
         <div className="min-h-screen w-screen bg-[#081d2c] flex items-center justify-center p-4 text-white">
           <div className="max-w-lg w-full bg-[#0c2336] border border-[#1c3e5c] rounded-2xl p-6 sm:p-8 shadow-2xl text-center space-y-5 animate-in fade-in">
@@ -62,10 +73,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">
-                Instabilidade na Exibição dos Dados
+                {isQuotaError ? 'Limite de Cache Local do Navegador Atingido' : 'Instabilidade na Exibição dos Dados'}
               </h2>
               <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Ocorreu uma falha inesperada durante a renderização da interface. Seus dados no banco continuam preservados.
+                {isQuotaError
+                  ? 'O volume de lançamentos do ERP excedeu o limite máximo de 5 MB do cache temporário do navegador. Clique em "Limpar Cache Local" abaixo para restabelecer a navegação imediatamente. Seus dados no banco de dados continuam 100% preservados.'
+                  : 'Ocorreu uma falha inesperada durante a renderização da interface. Seus dados no banco continuam preservados.'}
               </p>
             </div>
 
