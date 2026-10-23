@@ -6,6 +6,7 @@ import {
   sanitizeRowData,
   isUnifiedErpFile,
   auditAccountsDePara,
+  detectWorkFromRows,
 } from '../lib/erp-unified-importer';
 
 describe('Importador Unificado do ERP e Auditoria de De-Para (atriumset26.xlsx)', () => {
@@ -68,5 +69,31 @@ describe('Importador Unificado do ERP e Auditoria de De-Para (atriumset26.xlsx)'
     expect(unmapped.totalAmount).toBeCloseTo(4666.66, 2);
     expect(unmapped.groupingCodes).toContain('T');
     expect(unmapped.suggestedNature).toBe('rendimento');
+  });
+
+  it('4. Deve identificar dinamicamente a obra pelo Centro de Custo (NM_CNT_CST)', () => {
+    const mockWorks = [
+      { id: 'work-1', name: 'Atrium Select', code: 'OBR-001' },
+      { id: 'work-2', name: 'Unique', code: 'OBR-002' },
+      { id: 'work-3', name: 'Bela Vitta', code: 'OBR-003' },
+    ];
+
+    // Caso 1: Planilha do Atrium com "ED. ATRIUM"
+    const rowsAtrium = [{ NM_CNT_CST: 'ED. ATRIUM', DOCUMENTO: 'DOC-1' }];
+    const detAtrium = detectWorkFromRows(rowsAtrium, mockWorks);
+    expect(detAtrium.detectedWork?.id).toBe('work-1');
+    expect(detAtrium.costCenterName).toBe('ED. ATRIUM');
+
+    // Caso 2: Planilha de outra obra com "ED. UNIQUE"
+    const rowsUnique = [{ NM_CNT_CST: 'ED. UNIQUE', DOCUMENTO: 'DOC-2' }];
+    const detUnique = detectWorkFromRows(rowsUnique, mockWorks);
+    expect(detUnique.detectedWork?.id).toBe('work-2');
+    expect(detUnique.costCenterName).toBe('ED. UNIQUE');
+
+    // Caso 3: Planilha do Bela Vitta
+    const rowsBelaVitta = [{ NM_CNT_CST: 'BELA VITTA', DOCUMENTO: 'DOC-3' }];
+    const detBelaVitta = detectWorkFromRows(rowsBelaVitta, mockWorks);
+    expect(detBelaVitta.detectedWork?.id).toBe('work-3');
+    expect(detBelaVitta.costCenterName).toBe('BELA VITTA');
   });
 });

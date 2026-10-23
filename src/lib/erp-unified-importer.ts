@@ -235,6 +235,53 @@ export async function saveNewDeParaToSupabase(
 }
 
 /**
+ * Detecta a obra de destino com base no Centro de Custo ('NM_CNT_CST') ou colunas correlatas da planilha
+ */
+export function detectWorkFromRows(
+  rows: Record<string, any>[],
+  works: { id: string; name: string; code?: string; erp_code?: string }[]
+): {
+  detectedWork?: { id: string; name: string; code?: string };
+  costCenterName?: string;
+} {
+  if (!rows || rows.length === 0) return {};
+
+  for (let i = 0; i < Math.min(rows.length, 50); i++) {
+    const row = rows[i];
+    const rawCostCenter = String(row['NM_CNT_CST'] || row['obra'] || row['cost_center'] || '').trim();
+    if (!rawCostCenter) continue;
+
+    const normCc = rawCostCenter.toUpperCase();
+
+    const matched = works.find((w) => {
+      const normName = (w.name || '').toUpperCase();
+      const normCode = (w.code || '').toUpperCase();
+      const normErp = (w.erp_code || '').toUpperCase();
+
+      const keywords = normName
+        .split(/\s+/)
+        .filter((k) => k.length > 2 && !['ED.', 'EDIFICIO', 'RESIDENCIAL', 'CONDOMINIO'].includes(k));
+      const hasKeyword = keywords.some((kw) => normCc.includes(kw));
+
+      return (
+        normCc.includes(normName) ||
+        normName.includes(normCc) ||
+        hasKeyword ||
+        (normCode && normCc.includes(normCode)) ||
+        (normErp && normCc.includes(normErp))
+      );
+    });
+
+    return {
+      detectedWork: matched,
+      costCenterName: rawCostCenter,
+    };
+  }
+
+  return {};
+}
+
+/**
  * Processa a importação unificada completa (5.906+ linhas):
  * 1. Segrega Receitas e Custos/Despesas
  * 2. Faz a deduplicação rigorosa contra o Supabase
@@ -246,7 +293,8 @@ export async function executeUnifiedErpImport(
   rows: Record<string, any>[],
   customRules: DeParaRule[] = [],
   strategy: DeduplicationStrategy = 'update_existing',
-  workId: string = 'a0000000-0000-0000-0000-000000000001'
+  workId: string = 'work-1',
+  supabaseWorkId: string = 'a0000000-0000-0000-0000-000000000001'
 ): Promise<{
   success: boolean;
   totalRows: number;
@@ -336,7 +384,7 @@ export async function executeUnifiedErpImport(
       // Objeto mestre para actual_financial_entries no Supabase
       if (!existsInDb) {
         entriesToInsertInDb.push({
-          work_id: workId,
+          work_id: supabaseWorkId || workId,
           source_batch_id: 'b0000000-0000-0000-0000-000000000001',
           external_entry_id: `erp_${Date.now()}_${idx + 1}`,
           company_unit: sanitized.unidade || null,
@@ -365,7 +413,7 @@ export async function executeUnifiedErpImport(
         totalRevenueAmount += sanitized.valor;
         newRevenues.push({
           id: `rev-imp-${Date.now()}-${idx}`,
-          work_id: 'work-1',
+          work_id: workId,
           external_id: sanitized.documento,
           date: sanitized.data,
           document_number: sanitized.documento,
@@ -381,11 +429,11 @@ export async function executeUnifiedErpImport(
         totalCostAmount += sanitized.valor;
         newCosts.push({
           id: `cost-imp-${Date.now()}-${idx}`,
-          work_id: 'work-1',
+          work_id: workId,
           external_id: sanitized.documento,
           date: sanitized.data,
           document_number: sanitized.documento,
-          cost_center: sanitized.obra || 'CC-ATRIUM',
+          cost_center: sanitized.obra || `CC-${workId.toUpperCase()}`,
           category: !isObra ? 'indireto' : 'material',
           supplier_name: sanitized.fornecedor,
           description: sanitized.descricao,

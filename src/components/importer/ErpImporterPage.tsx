@@ -29,6 +29,7 @@ import {
   auditAccountsDePara,
   executeUnifiedErpImport,
   saveNewDeParaToSupabase,
+  detectWorkFromRows,
 } from '../../lib/erp-unified-importer';
 import { ATRIUM_DEPARA_RULES } from '../../lib/atrium-real-data';
 
@@ -46,6 +47,8 @@ export const ErpImporterPage: React.FC = () => {
 
   const [importType, setImportType] = useState<ErpImportType>('unified_erp_ledger');
   const [strategy, setStrategy] = useState<DeduplicationStrategy>('update_existing');
+  const [targetWorkId, setTargetWorkId] = useState<string>('work-1');
+  const [detectedCostCenter, setDetectedCostCenter] = useState<string>('');
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [parsedRows, setParsedRows] = useState<Record<string, any>[]>([]);
@@ -224,8 +227,17 @@ export const ErpImporterPage: React.FC = () => {
     }
   };
 
-  // Auto-detecção de modelo unificado e auditoria de De-Para
+  // Auto-detecção de modelo unificado, obra de destino e auditoria de De-Para
   const detectAndAuditFile = (rawHeaders: string[], dataRows: Record<string, any>[]) => {
+    // 1. Identificação da Obra pelo Centro de Custo da planilha
+    const detection = detectWorkFromRows(dataRows, works);
+    if (detection.detectedWork) {
+      setTargetWorkId(detection.detectedWork.id);
+      setDetectedCostCenter(detection.costCenterName || '');
+    } else if (detection.costCenterName) {
+      setDetectedCostCenter(detection.costCenterName);
+    }
+
     if (isUnifiedErpFile(rawHeaders)) {
       setImportType('unified_erp_ledger');
       autoMapColumns(rawHeaders, 'unified_erp_ledger');
@@ -338,11 +350,14 @@ export const ErpImporterPage: React.FC = () => {
 
     if (importType === 'unified_erp_ledger') {
       // Motor Especializado Unificado ERP com sincronização no Supabase
+      const supabaseWorkId = targetWorkId === 'work-1' ? 'a0000000-0000-0000-0000-000000000001' : targetWorkId;
       const result = await executeUnifiedErpImport(
         file.name,
         parsedRows,
         customDeParaRules,
-        strategy
+        strategy,
+        targetWorkId,
+        supabaseWorkId
       );
 
       setIsProcessing(false);
@@ -498,6 +513,36 @@ export const ErpImporterPage: React.FC = () => {
             <span className="w-6 h-6 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center text-xs">1</span>
             <span>Parâmetros da Importação</span>
           </h3>
+
+          {/* Seleção e Detecção da Obra de Destino */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-slate-300 font-semibold text-xs">
+                Obra de Destino *
+              </label>
+              {detectedCostCenter && (
+                <span className="text-[10px] text-emerald-400 font-semibold truncate max-w-[180px]" title={detectedCostCenter}>
+                  ✓ CC: "{detectedCostCenter}"
+                </span>
+              )}
+            </div>
+            <select
+              value={targetWorkId}
+              onChange={(e) => setTargetWorkId(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl glass-input text-xs font-semibold text-white bg-slate-900 border border-slate-700 focus:border-blue-500"
+            >
+              {works.map((w) => (
+                <option key={w.id} value={w.id} className="bg-slate-900 text-white">
+                  {w.name} ({w.code})
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {detectedCostCenter
+                ? `Identificado automaticamente pela coluna NM_CNT_CST ("${detectedCostCenter}"). Você pode alterar se desejar direcionar para outra obra.`
+                : 'Selecione para qual obra os custos e receitas serão direcionados.'}
+            </p>
+          </div>
 
           <div>
             <label className="block text-slate-300 font-semibold text-xs mb-1">Modelo de Arquivo *</label>
