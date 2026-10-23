@@ -53,8 +53,19 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleClearAll = () => {
     try {
+      // Preserva dados cadastrais e personalizações manuais antes de limpar caches pesados
+      const customWork = localStorage.getItem('gestao_obras_custom_work_metadata');
+      const customStages = localStorage.getItem('gestao_obras_custom_stage_progress');
+      const userProfiles = localStorage.getItem('gestao_obras_v2_user_profiles');
+      const customDePara = localStorage.getItem('atrium_custom_depara_rules');
+
       localStorage.clear();
       sessionStorage.clear();
+
+      if (customWork) localStorage.setItem('gestao_obras_custom_work_metadata', customWork);
+      if (customStages) localStorage.setItem('gestao_obras_custom_stage_progress', customStages);
+      if (userProfiles) localStorage.setItem('gestao_obras_v2_user_profiles', userProfiles);
+      if (customDePara) localStorage.setItem('atrium_custom_depara_rules', customDePara);
     } catch {}
     window.location.reload();
   };

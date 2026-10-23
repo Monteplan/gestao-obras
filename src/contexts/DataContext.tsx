@@ -184,8 +184,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const [works, setWorks] = useState<Work[]>(() => loadInitial('works', INITIAL_WORKS));
-  const [stages, setStages] = useState<Stage[]>(() => loadInitial('stages', INITIAL_STAGES));
+  const [works, setWorks] = useState<Work[]>(() => {
+    const loaded = loadInitial('works', INITIAL_WORKS);
+    try {
+      const customItem = localStorage.getItem('gestao_obras_custom_work_metadata');
+      if (customItem) {
+        const custom = JSON.parse(customItem);
+        return loaded.map(w => (w.id === 'work-1' || w.code === 'OBR-001') ? { ...w, ...custom } : w);
+      }
+    } catch {}
+    return loaded;
+  });
+  const [stages, setStages] = useState<Stage[]>(() => {
+    const loaded = loadInitial('stages', INITIAL_STAGES);
+    try {
+      const savedMap = localStorage.getItem('gestao_obras_custom_stage_progress');
+      if (savedMap) {
+        const parsedMap = JSON.parse(savedMap);
+        return loaded.map(s => parsedMap[s.id] !== undefined ? { ...s, progress_percent: parsedMap[s.id] } : s);
+      }
+    } catch {}
+    return loaded;
+  });
   const [budgetVersions, setBudgetVersions] = useState<BudgetVersion[]>(() => loadInitial('budget_versions', INITIAL_BUDGET_VERSIONS));
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>(() => loadInitial('budget_items', INITIAL_BUDGET_ITEMS));
   const [requisitions, setRequisitions] = useState<PurchaseRequisition[]>(() => loadInitial('requisitions', INITIAL_PURCHASE_REQUISITIONS));
@@ -266,10 +286,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setWorks(prev => {
             const others = prev.filter(w => w.code !== 'OBR-001' && w.id !== 'work-1');
             const fetchedWork = result.works[0];
+            const currentLocal = prev.find(w => w.code === 'OBR-001' || w.id === 'work-1');
             const activeWorkStages = stages.filter(s => s.work_id === fetchedWork.id || s.work_id === 'work-1');
             const liveProg = activeWorkStages.length > 0 ? calculateWeightedProgress(activeWorkStages) : fetchedWork.progress_percent;
+
+            let customWorkSaved: any = null;
+            try {
+              const item = localStorage.getItem('gestao_obras_custom_work_metadata');
+              if (item) customWorkSaved = JSON.parse(item);
+            } catch {}
+
             const consolidatedWork: Work = {
               ...fetchedWork,
+              name: customWorkSaved?.name || currentLocal?.name || fetchedWork.name,
+              client: customWorkSaved?.client || currentLocal?.client || fetchedWork.client,
               progress_percent: liveProg > 0 ? liveProg : fetchedWork.progress_percent,
             };
             return [consolidatedWork, ...others];
@@ -431,6 +461,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setWorks(prev => prev.map(w => w.id === id ? { ...w, ...sanitizedUpdates, updated_at: new Date().toISOString() } : w));
     addAuditLog('Atualizar Obra', 'works', id, `Atualização dos dados da obra`);
+
+    // Salva em chave protegida para nunca perder ao limpar cache transitório
+    try {
+      const existingCustom = JSON.parse(localStorage.getItem('gestao_obras_custom_work_metadata') || '{}');
+      localStorage.setItem('gestao_obras_custom_work_metadata', JSON.stringify({ ...existingCustom, ...sanitizedUpdates }));
+    } catch {}
+
+    // Persistência em nuvem no Supabase
+    if (isSupabaseConfigured() && supabase) {
+      const dbPayload: any = {};
+      if (sanitizedUpdates.name) dbPayload.name = sanitizedUpdates.name;
+      if (sanitizedUpdates.client) dbPayload.client = sanitizedUpdates.client;
+      if (sanitizedUpdates.address) dbPayload.address = sanitizedUpdates.address;
+      if (sanitizedUpdates.status) dbPayload.status = sanitizedUpdates.status;
+      if (sanitizedUpdates.progress_percent !== undefined) dbPayload.progress_percent = sanitizedUpdates.progress_percent;
+      if (sanitizedUpdates.contract_value !== undefined) dbPayload.contract_value = sanitizedUpdates.contract_value;
+      dbPayload.updated_at = new Date().toISOString();
+
+      Promise.resolve(
+        supabase.from('works').update(dbPayload).or(`code.eq.OBR-001,erp_code.eq.ERP-CE-1042,id.eq.${id}`)
+      ).then(({ error }) => {
+        if (!error) console.log('[DataContext] Obra atualizada no Supabase.');
+      }).catch(console.warn);
+    }
   };
 
   const deleteWork = (id: string) => {
@@ -636,6 +690,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setStages(nextStages);
     recalculateWorkProgress(target.work_id, nextStages);
     setStageProgressHistory(prev => [...historyEntriesToRecord, ...prev]);
+
+    // Salva progresso físico manual em chave protegida permanente
+    try {
+      const progressMap: Record<string, number> = {};
+      nextStages.forEach(s => {
+        if (s.progress_percent !== undefined) {
+          progressMap[s.id] = s.progress_percent;
+        }
+      });
+      localStorage.setItem('gestao_obras_custom_stage_progress', JSON.stringify(progressMap));
+    } catch {}
     addAuditLog(
       'Atualizar Progresso',
       'stages',
