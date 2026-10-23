@@ -50,18 +50,7 @@ export const SettingsPage: React.FC = () => {
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem('gestao_obras_v2_user_profiles');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const testEmails = [
-          'admin@monteplan.com.br',
-          'gestor@monteplan.com.br',
-          'compras@monteplan.com.br',
-          'financeiro@monteplan.com.br',
-          'engenharia@monteplan.com.br',
-          'consulta@monteplan.com.br',
-        ];
-        return parsed.filter((p: UserProfile) => !testEmails.includes(p.email?.toLowerCase()));
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn('Erro ao carregar perfis de usuários:', e);
     }

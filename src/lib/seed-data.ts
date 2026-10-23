@@ -21,7 +21,56 @@ import {
   StageProgressHistory,
 } from '../types';
 
-export const INITIAL_PROFILES: UserProfile[] = [];
+export const INITIAL_PROFILES: UserProfile[] = [
+  {
+    id: 'user-1',
+    email: 'admin@monteplan.com.br',
+    name: 'Carlos Mendes',
+    role: 'admin',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+  {
+    id: 'user-2',
+    email: 'gestor@monteplan.com.br',
+    name: 'Mariana Duarte',
+    role: 'gestor',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+  {
+    id: 'user-3',
+    email: 'compras@monteplan.com.br',
+    name: 'Roberto Farias',
+    role: 'compras',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+  {
+    id: 'user-4',
+    email: 'financeiro@monteplan.com.br',
+    name: 'Juliana Costa',
+    role: 'financeiro',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+  {
+    id: 'user-5',
+    email: 'engenharia@monteplan.com.br',
+    name: 'Lucas Pinho',
+    role: 'engenharia',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+  {
+    id: 'user-6',
+    email: 'consulta@monteplan.com.br',
+    name: 'Beatriz Ramos',
+    role: 'consulta',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+];
 
 export const INITIAL_WORKS: Work[] = [
   {

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../types';
+import { INITIAL_PROFILES } from '../lib/seed-data';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface AuthContextType {
@@ -20,47 +21,20 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const TEST_EMAILS = [
-  'admin@monteplan.com.br',
-  'gestor@monteplan.com.br',
-  'compras@monteplan.com.br',
-  'financeiro@monteplan.com.br',
-  'engenharia@monteplan.com.br',
-  'consulta@monteplan.com.br',
-];
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Exige autenticação e purga contas legadas de teste
+  // Sempre exige autenticação na tela de login ao entrar na aplicação
   useEffect(() => {
-    // Remove logins legados
+    // Remove qualquer login permanente anterior do localStorage
     localStorage.removeItem('gestao_obras_auth_user');
 
-    // Remove contas teste salvas no gerenciador de usuários local
-    try {
-      const stored = localStorage.getItem('gestao_obras_v2_user_profiles');
-      if (stored) {
-        const parsed: UserProfile[] = JSON.parse(stored);
-        const filtered = parsed.filter(p => !TEST_EMAILS.includes(p.email?.toLowerCase()));
-        localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(filtered));
-      }
-    } catch {
-      // ignore
-    }
-
-    // Verifica sessão ativa
+    // Verifica se já está autenticado nesta aba ativa (sessionStorage)
     const sessionUser = sessionStorage.getItem('gestao_obras_session_user');
     if (sessionUser) {
       try {
-        const parsed = JSON.parse(sessionUser);
-        if (TEST_EMAILS.includes(parsed?.email?.toLowerCase())) {
-          sessionStorage.removeItem('gestao_obras_session_user');
-          setUser(null);
-        } else {
-          setUser(parsed);
-        }
+        setUser(JSON.parse(sessionUser));
       } catch {
         setUser(null);
       }
@@ -73,16 +47,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     const normalizedEmail = (email || '').trim().toLowerCase();
 
-    // Rejeita contas de teste Monteplan que foram desativadas
-    if (TEST_EMAILS.includes(normalizedEmail)) {
-      return { success: false, error: 'As contas de teste foram desativadas. Utilize seu e-mail corporativo institucional.' };
-    }
-
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: pass });
         if (!error && data?.user) {
-          const profile: UserProfile = {
+          const profile = INITIAL_PROFILES.find(p => p.email.toLowerCase() === normalizedEmail) || {
             id: data.user.id,
             email: data.user.email || '',
             name: data.user.user_metadata?.full_name || normalizedEmail.split('@')[0],
@@ -115,7 +84,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // fallback silencioso
     }
 
-    // 2. Acesso com e-mail corporativo real (concede perfil Administrador por padrão)
+    // 2. Validação de Contas Cadastradas no Sistema
+    const found = INITIAL_PROFILES.find(p => p.email.toLowerCase() === normalizedEmail);
+    if (found) {
+      setUser(found);
+      sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(found));
+      return { success: true };
+    }
+
+    // 3. Acesso com e-mail corporativo institucional (concede perfil Administrador por padrão)
     if (normalizedEmail.includes('@')) {
       const formattedName = normalizedEmail
         .split('@')[0]
