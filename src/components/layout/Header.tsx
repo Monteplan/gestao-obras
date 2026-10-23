@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { UserRole } from '../../types';
-import { Bell, Shield, ChevronDown, LogOut, CheckCircle2, AlertTriangle, Clock, Sun, Moon, Menu } from 'lucide-react';
+import { Bell, Shield, LogOut, AlertTriangle, Clock, Sun, Moon, Menu } from 'lucide-react';
 import { useDevice } from '../../contexts/DeviceContext';
 import { DeviceIndicatorBadge } from '../common/DeviceIndicatorBadge';
 import { DatabaseIndicatorBadge } from '../common/DatabaseIndicatorBadge';
@@ -15,11 +15,10 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plataforma', onMenuToggle }) => {
-  const { user, role, switchRole, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const { works, stages, orders } = useData();
   const { theme, toggleTheme } = useTheme();
   const { isMobileView, toggleSidebarMobile } = useDevice();
-  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Calcula alertas ativos para o sino de notificações
@@ -28,15 +27,6 @@ export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plat
   const delayedOrders = orders.filter(o => o.status === 'atrasado' || (o.delivery_forecast < today && o.status !== 'recebido'));
 
   const totalAlerts = delayedStages.length + delayedOrders.length;
-
-  const rolesList: { value: UserRole; label: string; desc: string }[] = [
-    { value: 'admin', label: 'Administrador', desc: 'Acesso total, usuários e configurações' },
-    { value: 'gestor', label: 'Gestor de Obras', desc: 'Obras, etapas, cronograma e orçamentos' },
-    { value: 'compras', label: 'Compras', desc: 'Requisições, pedidos e recebimentos' },
-    { value: 'financeiro', label: 'Financeiro', desc: 'Custos, receitas, faturamento e resultados' },
-    { value: 'engenharia', label: 'Engenharia / Apontador', desc: 'Avanço físico e apontamento de mão de obra' },
-    { value: 'consulta', label: 'Consulta', desc: 'Visualização e relatórios em modo somente leitura' },
-  ];
 
   const handleMobileMenuClick = () => {
     if (toggleSidebarMobile) {
@@ -97,47 +87,13 @@ export const Header: React.FC<HeaderProps> = ({ currentTitle, breadcrumb = 'Plat
           )}
         </button>
 
-        {/* Switcher Rápido de Papéis para Demonstração */}
-        <div className="relative">
-          <button
-            onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-            className="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 dark:bg-[#0c2336] dark:border-[#1c3e5c] dark:hover:border-[#38bdf8]/50 dark:text-slate-200 transition-all"
-            title="Alternar Perfil para Teste de Permissões"
-          >
-            <Shield className="w-3.5 h-3.5 text-[#004171] dark:text-[#38bdf8]" />
-            <span className="capitalize">Perfil: <strong className="text-slate-900 dark:text-white font-bold">{role}</strong></span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-          </button>
-
-          {showRoleDropdown && (
-            <div className="absolute right-0 mt-2 w-72 rounded-xl bg-white border border-slate-200 text-slate-800 shadow-2xl dark:bg-[#0c2336] dark:border-[#1c3e5c] dark:text-slate-200 p-2 z-50 animate-in fade-in zoom-in-95">
-              <div className="px-3 py-2 border-b border-slate-200 dark:border-[#1c3e5c] text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Simular Perfil de Acesso (RBAC)
-              </div>
-              <div className="py-1 space-y-1">
-                {rolesList.map((r) => (
-                  <button
-                    key={r.value}
-                    onClick={() => {
-                      switchRole(r.value);
-                      setShowRoleDropdown(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-xs flex flex-col transition-colors ${
-                      role === r.value
-                        ? 'bg-sky-50 text-[#004171] border border-sky-200 dark:bg-[#004171]/50 dark:text-[#38bdf8] dark:border-[#38bdf8]/40 font-semibold'
-                        : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-[#102d45]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold">{r.label}</span>
-                      {role === r.value && <CheckCircle2 className="w-3.5 h-3.5 text-[#004171] dark:text-[#38bdf8]" />}
-                    </div>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal mt-0.5">{r.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+        {/* Perfil de Acesso do Usuário Autenticado */}
+        <div
+          className="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 border border-slate-300 text-slate-700 dark:bg-[#0c2336] dark:border-[#1c3e5c] dark:text-slate-200"
+          title={`Perfil de Acesso: ${role}`}
+        >
+          <Shield className="w-3.5 h-3.5 text-[#004171] dark:text-[#38bdf8]" />
+          <span className="capitalize">Perfil: <strong className="text-slate-900 dark:text-white font-bold">{role}</strong></span>
         </div>
 
         {/* Sino de Notificações com Alertas de Obras e Pedidos */}

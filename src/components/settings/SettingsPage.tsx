@@ -50,7 +50,18 @@ export const SettingsPage: React.FC = () => {
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem('gestao_obras_v2_user_profiles');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const testEmails = [
+          'admin@monteplan.com.br',
+          'gestor@monteplan.com.br',
+          'compras@monteplan.com.br',
+          'financeiro@monteplan.com.br',
+          'engenharia@monteplan.com.br',
+          'consulta@monteplan.com.br',
+        ];
+        return parsed.filter((p: UserProfile) => !testEmails.includes(p.email?.toLowerCase()));
+      }
     } catch (e) {
       console.warn('Erro ao carregar perfis de usuários:', e);
     }
@@ -571,7 +582,15 @@ export const SettingsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {userProfiles.map((p) => {
+                {userProfiles.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-400">
+                      <p className="text-sm font-semibold text-slate-300">Nenhum usuário cadastrado</p>
+                      <p className="text-xs text-slate-500 mt-1">Utilize o botão "+ Novo Usuário" acima para cadastrar a equipe técnica da Monteplan.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  userProfiles.map((p) => {
                   const badge = getRoleBadge(p.role);
                   const isCurrentLogged = user?.email?.toLowerCase() === p.email.toLowerCase();
                   const isDefaultSeed = INITIAL_PROFILES.some(init => init.id === p.id);
@@ -621,7 +640,7 @@ export const SettingsPage: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>

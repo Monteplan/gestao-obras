@@ -198,46 +198,6 @@ export const LoginPage: React.FC = () => {
                 <span>{loading ? 'Entrando...' : 'Acessar Plataforma'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
-
-              {/* Botões de Preenchimento Rápido Demo */}
-              <div className="pt-3 border-t border-[#1c3e5c] text-center">
-                <span className="text-xs text-white block mb-2 font-semibold tracking-wide">Contas Monteplan para Teste:</span>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setEmail('admin@monteplan.com.br'); setPassword('admin123'); }}
-                    className="px-3 py-1.5 rounded-lg bg-[#0e304f] hover:bg-[#174873] border border-[#38bdf8]/60 shadow-md text-xs font-bold transition-all transform active:scale-95"
-                    style={{ color: '#ffffff' }}
-                  >
-                    Admin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEmail('gestor@monteplan.com.br'); setPassword('gestor123'); }}
-                    className="px-3 py-1.5 rounded-lg bg-[#0e304f] hover:bg-[#174873] border border-[#38bdf8]/60 shadow-md text-xs font-bold transition-all transform active:scale-95"
-                    style={{ color: '#ffffff' }}
-                  >
-                    Gestor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEmail('compras@monteplan.com.br'); setPassword('compras123'); }}
-                    className="px-3 py-1.5 rounded-lg bg-[#0e304f] hover:bg-[#174873] border border-[#38bdf8]/60 shadow-md text-xs font-bold transition-all transform active:scale-95"
-                    style={{ color: '#ffffff' }}
-                  >
-                    Compras
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEmail('financeiro@monteplan.com.br'); setPassword('fin123'); }}
-                    className="px-3 py-1.5 rounded-lg bg-[#0e304f] hover:bg-[#174873] border border-[#38bdf8]/60 shadow-md text-xs font-bold transition-all transform active:scale-95"
-                    style={{ color: '#ffffff' }}
-                  >
-                    Financeiro
-                  </button>
-                </div>
-              </div>
-
               <div className="text-center pt-2">
                 <button
                   type="button"
