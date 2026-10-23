@@ -4,6 +4,7 @@ import {
   ATRIUM_CONSOLIDATED_ACCOUNTS,
   ConsolidatedRealAccount,
 } from '../../lib/atrium-real-data';
+import { useData } from '../../contexts/DataContext';
 import { formatBRL } from '../../lib/utils';
 import {
   FileSpreadsheet,
@@ -21,9 +22,15 @@ import {
 } from 'lucide-react';
 
 export const RealIncurredCompositionView: React.FC = () => {
+  const { incurredCosts } = useData();
   const [activeTab, setActiveTab] = useState<'resumo' | 'obra' | 'extra_obra'>('resumo');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'todos' | 'obra' | 'extra'>('todos');
+
+  const totalIncurredFromState = useMemo(() => {
+    if (incurredCosts.length === 0) return ATRIUM_REAL_TOTALS.totalGeral;
+    return incurredCosts.reduce((acc, c) => acc + (c.net_value || c.gross_value || 0), 0);
+  }, [incurredCosts]);
 
   // Segregated list of consolidated accounts
   const obraAccounts = useMemo(
@@ -104,10 +111,14 @@ export const RealIncurredCompositionView: React.FC = () => {
             Total Geral Realizado Incorrido (ERP)
           </span>
           <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-            {formatBRL(ATRIUM_REAL_TOTALS.totalGeral)}
+            {formatBRL(incurredCosts.length > 0 ? totalIncurredFromState : ATRIUM_REAL_TOTALS.totalGeral)}
           </div>
           <div className="flex items-center justify-between text-xs text-slate-500 mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-            <span>5.635 lançamentos contábeis</span>
+            <span>
+              {incurredCosts.length > 0
+                ? `${incurredCosts.length.toLocaleString('pt-BR')} custos e despesas importadas`
+                : '5.635 lançamentos contábeis'}
+            </span>
             <span className="font-bold text-slate-700 dark:text-slate-300">100% da base</span>
           </div>
         </div>

@@ -48,7 +48,7 @@ interface WorkResultAnalysisProps {
 }
 
 export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: propWork }) => {
-  const { works } = useData();
+  const { works, revenues, incurredCosts } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
 
   const [activeSubTab, setActiveSubTab] = useState<'dre' | 'indicadores'>('dre');
@@ -96,9 +96,39 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     setExpandedGroups({});
   };
 
-  // Filtragem da DRE
+  // Lançamentos reais do ERP vinculados a esta obra
+  const workRevenues = useMemo(() => {
+    return revenues.filter((r) => r.work_id === currentWork.id || r.work_id === 'work-1');
+  }, [revenues, currentWork.id]);
+
+  const dynamicTotalRevenue = useMemo(() => {
+    if (workRevenues.length === 0) return ATRIUM_DRE_SUMMARY.receita.realizadoBruto;
+    return workRevenues.reduce((acc, r) => acc + (r.recognized_value || r.contracted_value || 0), 0);
+  }, [workRevenues]);
+
+  // Filtragem da DRE com dados reais dinâmicos
   const filteredDreLines = useMemo(() => {
-    let lines = ATRIUM_DRE_LINES;
+    let lines = ATRIUM_DRE_LINES.map((line) => {
+      if (workRevenues.length > 0 && (line.id === 'dre-1' || line.name === 'RECEITAS')) {
+        const diff = dynamicTotalRevenue - line.orcado;
+        return {
+          ...line,
+          realizado: dynamicTotalRevenue,
+          variacao: diff,
+          percentRealizado: (dynamicTotalRevenue / line.orcado) * 100,
+        };
+      }
+      if (workRevenues.length > 0 && (line.id === 'dre-2' || line.name === 'RECEITA DE VENDAS DE IMÓVEIS')) {
+        const diff = dynamicTotalRevenue - line.orcado;
+        return {
+          ...line,
+          realizado: dynamicTotalRevenue,
+          variacao: diff,
+          percentRealizado: (dynamicTotalRevenue / line.orcado) * 100,
+        };
+      }
+      return line;
+    });
 
     if (selectedCategory !== 'todos') {
       lines = lines.filter((l) => l.category === selectedCategory || l.isTotal);
@@ -112,9 +142,34 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     }
 
     return lines;
-  }, [searchTerm, selectedCategory]);
+  }, [searchTerm, selectedCategory, workRevenues, dynamicTotalRevenue]);
 
-  const summary = ATRIUM_DRE_SUMMARY;
+  // Sumário consolidado dinâmico
+  const summary = useMemo(() => {
+    if (workRevenues.length === 0) return ATRIUM_DRE_SUMMARY;
+
+    const realizadoBruto = dynamicTotalRevenue;
+    const deducoesRealizado = ATRIUM_DRE_SUMMARY.receita.deducoesRealizado;
+    const liquidaRealizado = realizadoBruto - deducoesRealizado;
+    const orcadoBruto = ATRIUM_DRE_SUMMARY.receita.orcadoBruto;
+
+    return {
+      ...ATRIUM_DRE_SUMMARY,
+      receita: {
+        ...ATRIUM_DRE_SUMMARY.receita,
+        realizadoBruto,
+        variacaoBruta: realizadoBruto - orcadoBruto,
+        percentBruto: (realizadoBruto / orcadoBruto) * 100,
+        liquidaRealizado,
+        liquidaPercent: (liquidaRealizado / ATRIUM_DRE_SUMMARY.receita.liquidaOrcado) * 100,
+      },
+      resultadoFinanceiro: {
+        ...ATRIUM_DRE_SUMMARY.resultadoFinanceiro,
+        resultadoOperacionalRealizado:
+          liquidaRealizado - ATRIUM_DRE_SUMMARY.custoObra.realizado - ATRIUM_DRE_SUMMARY.despesas.realizado,
+      },
+    };
+  }, [workRevenues, dynamicTotalRevenue]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
