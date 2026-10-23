@@ -38,6 +38,7 @@ import {
   Calculator,
 } from 'lucide-react';
 import { DataProvenanceBadge } from '../common/DataProvenanceBadge';
+import { computeDynamicDre } from '../../lib/dre-calculator';
 
 interface WorkResultAnalysisProps {
   work?: Work;
@@ -48,7 +49,7 @@ interface WorkResultAnalysisProps {
 }
 
 export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: propWork }) => {
-  const { works, revenues, incurredCosts } = useData();
+  const { works, revenues, incurredCosts, customDeParaRules } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
 
   const [activeSubTab, setActiveSubTab] = useState<'dre' | 'indicadores'>('dre');
@@ -96,39 +97,23 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     setExpandedGroups({});
   };
 
-  // Lançamentos reais do ERP vinculados a esta obra
-  const workRevenues = useMemo(() => {
-    return revenues.filter((r) => r.work_id === currentWork.id || r.work_id === 'work-1');
-  }, [revenues, currentWork.id]);
+  // Motor de Cálculo Dinâmico de Toda a DRE (Receitas, Deduções, Custos Civis, Mão de Obra e Despesas)
+  const dynamicDreData = useMemo(() => {
+    return computeDynamicDre(
+      ATRIUM_DRE_LINES,
+      ATRIUM_DRE_SUMMARY,
+      incurredCosts,
+      revenues,
+      customDeParaRules,
+      currentWork.id
+    );
+  }, [incurredCosts, revenues, customDeParaRules, currentWork.id]);
 
-  const dynamicTotalRevenue = useMemo(() => {
-    if (workRevenues.length === 0) return ATRIUM_DRE_SUMMARY.receita.realizadoBruto;
-    return workRevenues.reduce((acc, r) => acc + (r.recognized_value || r.contracted_value || 0), 0);
-  }, [workRevenues]);
+  const summary = dynamicDreData.summary;
 
-  // Filtragem da DRE com dados reais dinâmicos
+  // Filtragem da DRE com todas as 200+ contas recalculadas dinamicamente
   const filteredDreLines = useMemo(() => {
-    let lines = ATRIUM_DRE_LINES.map((line) => {
-      if (workRevenues.length > 0 && (line.id === 'dre-1' || line.name === 'RECEITAS')) {
-        const diff = dynamicTotalRevenue - line.orcado;
-        return {
-          ...line,
-          realizado: dynamicTotalRevenue,
-          variacao: diff,
-          percentRealizado: (dynamicTotalRevenue / line.orcado) * 100,
-        };
-      }
-      if (workRevenues.length > 0 && (line.id === 'dre-2' || line.name === 'RECEITA DE VENDAS DE IMÓVEIS')) {
-        const diff = dynamicTotalRevenue - line.orcado;
-        return {
-          ...line,
-          realizado: dynamicTotalRevenue,
-          variacao: diff,
-          percentRealizado: (dynamicTotalRevenue / line.orcado) * 100,
-        };
-      }
-      return line;
-    });
+    let lines = dynamicDreData.lines;
 
     if (selectedCategory !== 'todos') {
       lines = lines.filter((l) => l.category === selectedCategory || l.isTotal);
@@ -142,34 +127,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     }
 
     return lines;
-  }, [searchTerm, selectedCategory, workRevenues, dynamicTotalRevenue]);
-
-  // Sumário consolidado dinâmico
-  const summary = useMemo(() => {
-    if (workRevenues.length === 0) return ATRIUM_DRE_SUMMARY;
-
-    const realizadoBruto = dynamicTotalRevenue;
-    const deducoesRealizado = ATRIUM_DRE_SUMMARY.receita.deducoesRealizado;
-    const liquidaRealizado = realizadoBruto - deducoesRealizado;
-    const orcadoBruto = ATRIUM_DRE_SUMMARY.receita.orcadoBruto;
-
-    return {
-      ...ATRIUM_DRE_SUMMARY,
-      receita: {
-        ...ATRIUM_DRE_SUMMARY.receita,
-        realizadoBruto,
-        variacaoBruta: realizadoBruto - orcadoBruto,
-        percentBruto: (realizadoBruto / orcadoBruto) * 100,
-        liquidaRealizado,
-        liquidaPercent: (liquidaRealizado / ATRIUM_DRE_SUMMARY.receita.liquidaOrcado) * 100,
-      },
-      resultadoFinanceiro: {
-        ...ATRIUM_DRE_SUMMARY.resultadoFinanceiro,
-        resultadoOperacionalRealizado:
-          liquidaRealizado - ATRIUM_DRE_SUMMARY.custoObra.realizado - ATRIUM_DRE_SUMMARY.despesas.realizado,
-      },
-    };
-  }, [workRevenues, dynamicTotalRevenue]);
+  }, [dynamicDreData.lines, searchTerm, selectedCategory]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">

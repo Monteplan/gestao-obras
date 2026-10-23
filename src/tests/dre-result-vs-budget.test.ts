@@ -103,4 +103,56 @@ describe('Diferenciação: Acompanhamento do Orçamento da Obra vs Acompanhament
     expect(resultadoOpLine?.orcado).toBeCloseTo(23749249.25, 2);
     expect(resultadoOpLine?.realizado).toBeCloseTo(-9259263.35, 2);
   });
+
+  it('7. Deve recalcular dinamicamente 100% da DRE (Receitas, Deduções, Custos e Despesas) a partir dos lançamentos do ERP', async () => {
+    const { computeDynamicDre } = await import('../lib/dre-calculator');
+    
+    const mockCosts: any[] = [
+      { id: 'c1', erp_account_code: 'Estrutura De Concreto', net_value: 500000, work_id: 'work-1' },
+      { id: 'c2', erp_account_code: 'Alvenaria E Painéis', net_value: 300000, work_id: 'work-1' },
+      { id: 'c3', erp_account_code: 'COFINS', net_value: 80000, work_id: 'work-1' },
+      { id: 'c4', erp_account_code: 'PIS', net_value: 20000, work_id: 'work-1' },
+      { id: 'c5', erp_account_code: 'Comissão De Corretores', net_value: 150000, work_id: 'work-1' },
+    ];
+
+    const mockRevenues: any[] = [
+      { id: 'r1', recognized_value: 4950000, description: 'Receita de Vendas', work_id: 'work-1' },
+    ];
+
+    const dynamicResult = computeDynamicDre(
+      ATRIUM_DRE_LINES,
+      ATRIUM_DRE_SUMMARY,
+      mockCosts,
+      mockRevenues,
+      [],
+      'work-1'
+    );
+
+    expect(dynamicResult.hasDynamicData).toBe(true);
+
+    // Valida contas analíticas atualizadas
+    const concLine = dynamicResult.lines.find(l => l.name === 'ESTRUTURA DE CONCRETO');
+    expect(concLine?.realizado).toBe(500000);
+
+    const alvLine = dynamicResult.lines.find(l => l.name === 'ALVENARIA E PAINÉIS');
+    expect(alvLine?.realizado).toBe(300000);
+
+    const cofinsLine = dynamicResult.lines.find(l => l.name === 'COFINS');
+    expect(cofinsLine?.realizado).toBe(80000);
+
+    const pisLine = dynamicResult.lines.find(l => l.name === 'PIS');
+    expect(pisLine?.realizado).toBe(20000);
+
+    // Valida grupos agregados
+    const deducaoGroup = dynamicResult.lines.find(l => l.name === 'DEDUÇÕES DA RECEITA');
+    expect(deducaoGroup?.realizado).toBe(100000); // 80k + 20k
+
+    const matServGroup = dynamicResult.lines.find(l => l.name === 'MATERIAIS E SERVIÇOS DE EXECUÇÃO DE OBRA');
+    expect(matServGroup?.realizado).toBe(800000); // 500k + 300k
+
+    // Valida summary dos cards
+    expect(dynamicResult.summary.receita.realizadoBruto).toBe(4950000);
+    expect(dynamicResult.summary.custoObra.realizado).toBe(800000);
+    expect(dynamicResult.summary.despesas.realizado).toBe(150000);
+  });
 });
