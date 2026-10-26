@@ -237,13 +237,103 @@ html.light h6 {
   color: #0f172a;
 }
 
-/* Elementos com text-white dentro de containers claros no modo claro: FORÇAR FONTE ESCURA */
-html.light .glass-card .text-white,
-html.light .glass-panel .text-white,
-html.light main .text-white,
-html.light aside .text-white:not([data-active="true"] *),
-html.light header .text-white:not(.user-avatar *):not([class*="bg-[#004171]"]) {
+/* Elementos com text-white dentro de containers claros no modo claro: FORÇAR FONTE ESCURA (EXCETO botões e badges coloridos) */
+html.light .glass-card .text-white:not(button *):not(button):not(a *):not(a):not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-red-"]):not([class*="bg-indigo-"]):not([class*="bg-[#004171]"]),
+html.light .glass-panel .text-white:not(button *):not(button):not(a *):not(a):not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-red-"]):not([class*="bg-indigo-"]):not([class*="bg-[#004171]"]),
+html.light main .text-white:not(button *):not(button):not(a *):not(a):not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-red-"]):not([class*="bg-indigo-"]):not([class*="bg-[#004171]"]),
+html.light aside .text-white:not([data-active="true"] *):not(button *):not(button),
+html.light header .text-white:not(.user-avatar *):not([class*="bg-[#004171]"]):not(button *):not(button) {
   color: #0f172a !important;
+}
+
+/* ==========================================================================
+   CARDS & CONTAINERS NO MODO CLARO (GARANTIA DE FUNDO CLARO E BORDAS SUAVES)
+   ========================================================================== */
+html.light .bg-slate-900,
+html.light .bg-slate-900\/95,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/50,
+html.light .bg-slate-900\/40,
+html.light .bg-slate-950,
+html.light .bg-slate-950\/90,
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/70,
+html.light .bg-\[\#081d2c\],
+html.light .bg-\[\#0c2336\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light .border-slate-800,
+html.light .border-slate-800\/80,
+html.light .border-slate-800\/60,
+html.light .border-slate-700,
+html.light .border-slate-700\/80 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Tabelas e cabeçalhos no modo claro */
+html.light thead {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light thead th {
+  color: #475569 !important;
+  font-weight: 700 !important;
+}
+
+html.light tbody tr:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Cores de texto vibrantes adaptadas para legibilidade cristalina no fundo branco */
+html.light .text-blue-400,
+html.light .text-blue-300 {
+  color: #1d4ed8 !important;
+}
+
+html.light .text-sky-400,
+html.light .text-sky-300 {
+  color: #0284c7 !important;
+}
+
+html.light .text-cyan-400,
+html.light .text-cyan-300 {
+  color: #0e7490 !important;
+}
+
+html.light .text-emerald-400,
+html.light .text-emerald-300 {
+  color: #047857 !important;
+}
+
+html.light .text-amber-400,
+html.light .text-amber-300 {
+  color: #b45309 !important;
+}
+
+html.light .text-indigo-400,
+html.light .text-indigo-300 {
+  color: #4338ca !important;
+}
+
+/* Badges e pílulas com fundos escuros adaptados para tons suaves no modo claro */
+html.light .bg-blue-950,
+html.light .bg-blue-950\/80,
+html.light .bg-blue-950\/60,
+html.light .bg-sky-950,
+html.light .bg-sky-950\/80,
+html.light .bg-sky-950\/60,
+html.light .bg-emerald-950,
+html.light .bg-amber-950,
+html.light .bg-indigo-950,
+html.light .bg-indigo-950\/80 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
 }
 
 /* Cores de texto slate no modo claro: sempre legíveis e escuras */

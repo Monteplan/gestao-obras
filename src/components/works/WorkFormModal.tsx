@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Work, WorkStatus } from '../../types';
+import { Work, WorkStatus, UserProfile } from '../../types';
 import { X, Building2, MapPin, UserCheck } from 'lucide-react';
 import { BRAZILIAN_STATES } from '../../lib/utils';
+import { INITIAL_PROFILES } from '../../lib/seed-data';
 
 interface WorkFormModalProps {
   isOpen: boolean;
@@ -16,6 +17,20 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
   onSave,
   initialWork,
 }) => {
+  // Carrega a lista oficial de usuários cadastrados no sistema
+  const [userProfiles] = useState<UserProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem('gestao_obras_v2_user_profiles');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Erro ao carregar perfis de usuários:', e);
+    }
+    return INITIAL_PROFILES;
+  });
+
+  const defaultManager = userProfiles.find((u) => u.role === 'gestor')?.name || userProfiles[0]?.name || 'Mariana Duarte';
+  const defaultEngineer = userProfiles.find((u) => u.role === 'engenharia')?.name || userProfiles[0]?.name || 'Lucas Pinho';
+
   const [formData, setFormData] = useState({
     code: '',
     erp_code: '',
@@ -26,8 +41,8 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
     state: 'SP',
     city_state: 'São Paulo/SP',
     project_type: 'Residencial',
-    manager_name: 'Mariana Duarte',
-    engineer_name: 'Eng. Lucas Pinho',
+    manager_name: defaultManager,
+    engineer_name: defaultEngineer,
     planned_start: '',
     planned_end: '',
     actual_start: '',
@@ -72,8 +87,8 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
         state: 'SP',
         city_state: 'São Paulo/SP',
         project_type: 'Residencial Vertical',
-        manager_name: 'Mariana Duarte',
-        engineer_name: 'Eng. Lucas Pinho',
+        manager_name: defaultManager,
+        engineer_name: defaultEngineer,
         planned_start: new Date().toISOString().split('T')[0],
         planned_end: new Date(Date.now() + 180 * 86400000).toISOString().split('T')[0],
         actual_start: '',
@@ -84,7 +99,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
         notes: '',
       });
     }
-  }, [initialWork, isOpen]);
+  }, [initialWork, isOpen, defaultManager, defaultEngineer]);
 
   if (!isOpen) return null;
 
@@ -99,19 +114,19 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-      <div className="glass-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl border border-slate-700 shadow-2xl relative">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+      <div className="glass-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl relative bg-white dark:bg-[#0c2336] text-slate-900 dark:text-white">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400">
+            <div className="p-2 rounded-xl bg-blue-600/20 text-blue-500 dark:text-blue-400">
               <Building2 className="w-5 h-5" />
             </div>
-            <h2 className="text-base font-bold text-white">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
               {initialWork ? 'Editar Dados da Obra' : 'Cadastrar Nova Obra'}
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <X className="w-5 h-5" />
           </button>
@@ -120,7 +135,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
         <form onSubmit={handleSubmit} className="mt-4 space-y-4 text-xs">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Código Interno *</label>
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Código Interno *</label>
               <input
                 type="text"
                 required
@@ -132,7 +147,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Código no ERP (Opcional)</label>
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Código no ERP (Opcional)</label>
               <input
                 type="text"
                 value={formData.erp_code}
@@ -144,7 +159,7 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-slate-300 font-semibold mb-1">Nome do Empreendimento / Obra *</label>
+            <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Nome do Empreendimento / Obra *</label>
             <input
               type="text"
               required
@@ -157,37 +172,60 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Gestor do Empreendimento / Contrato</label>
-              <input
-                type="text"
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                Gestor do Empreendimento *
+              </label>
+              <select
+                required
                 value={formData.manager_name}
                 onChange={(e) => setFormData({ ...formData, manager_name: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl glass-input"
-                placeholder="Ex: Mariana Duarte"
-              />
+                className="w-full px-3 py-2 rounded-xl glass-input bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white cursor-pointer"
+              >
+                <option value="" disabled>Selecione um gestor...</option>
+                {userProfiles.map((user) => (
+                  <option key={user.id} value={user.name} className="bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white">
+                    {user.name} ({user.role.toUpperCase()})
+                  </option>
+                ))}
+                {formData.manager_name && !userProfiles.some((u) => u.name === formData.manager_name) && (
+                  <option value={formData.manager_name} className="bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white">
+                    {formData.manager_name}
+                  </option>
+                )}
+              </select>
             </div>
 
             <div>
-              <label className="block text-slate-300 font-semibold mb-1 flex items-center space-x-1">
-                <UserCheck className="w-3.5 h-3.5 text-[#38bdf8]" />
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 flex items-center space-x-1">
+                <UserCheck className="w-3.5 h-3.5 text-[#004171] dark:text-[#38bdf8]" />
                 <span>Engenheiro Responsável *</span>
               </label>
-              <input
-                type="text"
+              <select
                 required
                 value={formData.engineer_name}
                 onChange={(e) => setFormData({ ...formData, engineer_name: e.target.value })}
-                className="w-full px-3 py-2 rounded-xl glass-input border-[#004171]/50 focus:border-[#38bdf8]"
-                placeholder="Ex: Eng. Lucas Pinho"
-              />
+                className="w-full px-3 py-2 rounded-xl glass-input bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white cursor-pointer"
+              >
+                <option value="" disabled>Selecione um engenheiro...</option>
+                {userProfiles.map((user) => (
+                  <option key={user.id} value={user.name} className="bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white">
+                    {user.name} ({user.role.toUpperCase()})
+                  </option>
+                ))}
+                {formData.engineer_name && !userProfiles.some((u) => u.name === formData.engineer_name) && (
+                  <option value={formData.engineer_name} className="bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white">
+                    {formData.engineer_name}
+                  </option>
+                )}
+              </select>
             </div>
 
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Status da Obra *</label>
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Status da Obra *</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as WorkStatus })}
-                className="w-full px-3 py-2 rounded-xl glass-input bg-[#081d2c] text-white cursor-pointer"
+                className="w-full px-3 py-2 rounded-xl glass-input bg-white dark:bg-[#081d2c] text-slate-900 dark:text-white cursor-pointer"
               >
                 <option value="planejamento" className="bg-[#081d2c]">Planejamento</option>
                 <option value="em_andamento" className="bg-[#081d2c]">Em Andamento</option>

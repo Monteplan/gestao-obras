@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { WorkFormModal } from './WorkFormModal';
 import { WorksInteractiveMapContainer } from './map/WorksInteractiveMapContainer';
-import { DataProvenanceBadge } from '../common/DataProvenanceBadge';
 
 interface WorksListPageProps {
   onSelectWork: (workId: string) => void;
@@ -99,11 +98,6 @@ export const WorksListPage: React.FC<WorksListPageProps> = ({ onSelectWork }) =>
                   <span className="px-2 py-0.5 rounded-md bg-blue-600/20 text-blue-400 border border-blue-500/30 text-[10px] font-mono font-bold">
                     {work.code}
                   </span>
-                  {(work.id === 'work-1' || work.code === 'OBR-001' || work.name.toLowerCase().includes('atrium')) ? (
-                    <DataProvenanceBadge type="pco" compact sourceFile="PCO SET/26" />
-                  ) : (
-                    <DataProvenanceBadge type="demonstracao" compact details="Demonstração" />
-                  )}
                   {work.erp_code && (
                     <span className="text-[10px] text-slate-500 font-mono">ERP: {work.erp_code}</span>
                   )}

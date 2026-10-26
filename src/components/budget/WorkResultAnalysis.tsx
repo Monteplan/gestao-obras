@@ -40,7 +40,6 @@ import {
   SlidersHorizontal,
   Target,
 } from 'lucide-react';
-import { DataProvenanceBadge } from '../common/DataProvenanceBadge';
 import { computeDynamicDre } from '../../lib/dre-calculator';
 
 interface WorkResultAnalysisProps {
@@ -139,40 +138,6 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Banner de Diferenciação Conceitual */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-900 border border-blue-800/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-blue-400 mb-1 uppercase tracking-wider">
-            <TrendingUp className="w-4 h-4" />
-            <span>2. Acompanhamento do Resultado da Obra (Visão Econômico-Financeira / DRE)</span>
-          </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">
-            Resultado Consolidado e DRE do Empreendimento Atrium
-          </h2>
-          <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-            Visão gerencial conforme a aba <strong>RESUMO ORÇAMENTO X REAL</strong> da planilha oficial do PCO. Diferente do orçamento técnico de obra (restrito às etapas civis), esta visão engloba a viabilidade total: <strong>Receitas de Vendas</strong>, <strong>Impostos</strong>, <strong>Custos de Obra</strong>, <strong>Despesas Comerciais/MKT</strong> e <strong>Margem Final</strong>.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-2 shrink-0 flex-wrap gap-2">
-          <DataProvenanceBadge
-            type="pco"
-            sourceFile="Aba RESUMO ORÇAMENTO X REAL"
-            baseDate="Set/2026"
-            details="Conciliação DRE do Empreendimento"
-          />
-          <DataProvenanceBadge
-            type="erp"
-            sourceFile="Aba REAL (5.635 lançamentos)"
-            details="Contas de Custo e Despesa"
-          />
-          <DataProvenanceBadge
-            type="calculado"
-            details="Margem e Resultado Operacional"
-          />
-        </div>
-      </div>
-
       {/* SELETOR DE MODO DE COMPARAÇÃO DO ORÇAMENTO (GLOBAL vs MEDIÇÃO EAP) */}
       <div className="p-3.5 bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
@@ -919,33 +884,6 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
 
         return (
           <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Banner de Contexto de Performance */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-900/30 via-slate-900 to-indigo-950/40 border border-blue-800/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center space-x-2 text-xs font-bold text-blue-400 mb-1 uppercase tracking-wider">
-                  <Activity className="w-4 h-4" />
-                  <span>Indicadores Econômicos de Viabilidade & Performance Construtiva (Orçado vs. Real)</span>
-                </div>
-                <h3 className="text-lg font-bold text-white tracking-tight">
-                  Viabilidade Imobiliária e Desempenho Real da Obra
-                </h3>
-                <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-                  Comparativo entre as premissas orçadas no estudo de viabilidade e os indicadores reais calculados conforme a evolução física (<strong>{formatPercent(progressPercent, 2)} executado</strong>) e os dados contábeis da <strong>DRE Oficial</strong>.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-3 py-1.5 rounded-xl bg-blue-500/10 text-blue-300 border border-blue-500/20 text-xs font-mono font-semibold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
-                  <span>PCO: {formatPercent(progressPercent, 2)} Físico</span>
-                </span>
-                <span className="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-xs font-mono font-semibold flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Custo: {formatPercent(Math.abs(percentVariacaoCustoM2), 2)} Economia</span>
-                </span>
-              </div>
-            </div>
-
             {/* 4 CARDS PRINCIPAIS: VGV, PREÇO M², CUSTO OBRA/CUB E MARGEM */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Card 1: VGV Real (Vendido + Estoque) */}

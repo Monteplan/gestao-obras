@@ -19,11 +19,7 @@ import {
   Search,
   Filter,
   FileSpreadsheet,
-  Edit3,
-  X,
-  Save,
 } from 'lucide-react';
-import { DataProvenanceBadge } from '../../common/DataProvenanceBadge';
 
 interface AtriumPhysicalDashboardProps {
   work: Work;
@@ -34,14 +30,9 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
   work,
   macroPeriods = [],
 }) => {
-  const { stages, updateStageProgress } = useData();
+  const { stages } = useData();
   const [activeTab, setActiveTab] = useState<'geral' | 'diretos' | 'indiretos' | 'curva_s'>('geral');
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Modal de Edição Rápida de Progresso da Etapa
-  const [editingStage, setEditingStage] = useState<{ id: string; code: string; name: string; progress: number } | null>(null);
-  const [editPercentInput, setEditPercentInput] = useState<string>('0');
-  const [editReason, setEditReason] = useState<string>('');
 
   // 1. Obter etapas ativas da obra no DataContext (com fallback para os dados de seed se ainda não carregados)
   const workStages = stages.filter((s) => s.work_id === work.id || s.work_id === 'work-1');
@@ -122,14 +113,6 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
     return true;
   });
 
-  const handleSaveProgress = () => {
-    if (!editingStage) return;
-    const numVal = parseFloat(editPercentInput.replace(',', '.'));
-    if (isNaN(numVal) || numVal < 0 || numVal > 100) return;
-    updateStageProgress(editingStage.id, numVal, editReason || 'Atualização rápida de progresso físico');
-    setEditingStage(null);
-  };
-
   // Curva S Mock/Real de períodos caso macroPeriods esteja vazio
   const sCurvePeriods = macroPeriods.length > 0 ? macroPeriods : [
     { period_key: '2026-09', period_label: 'Set/26', planned_percent_month: 2.37, planned_percent_accumulated: 48.59, actual_percent_accumulated: execAcc },
@@ -154,106 +137,83 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
 
   return (
     <div className="space-y-6">
-      {/* BARRA DE PROCEDÊNCIA E AUDITORIA DA MEDIÇÃO FÍSICA (ITEM 10 DO PROMPT) */}
-      <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <DataProvenanceBadge
-            type="pco"
-            sourceFile="ATRIUM - Planejamento e Controle de Obra (PCO) - SET 26 - IMPORT.xlsx"
-            baseDate="Set/2026"
-            details="Aba PLANEJAMENTO MACRO e % DIRETOS / % INDIRETOS"
-          />
-          <div className="text-xs text-slate-300">
-            <span className="font-semibold text-white">Competência Oficial da Medição:</span>{' '}
-            <span className="font-mono text-cyan-300 font-bold">Setembro/2026</span>
-            <span className="text-slate-500 mx-2">|</span>
-            <span className="text-slate-400">Importado em: 21/09/2026</span>
-            <span className="text-slate-500 mx-2">|</span>
-            <span className="text-slate-400">Versão: PCO Baseline 1.0</span>
-          </div>
-        </div>
-        <div className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-lg">
-          Metodologia: Avanço físico por pesos da EAP (independe dos desembolsos financeiros)
-        </div>
-      </div>
-
       {/* 1. CARDS DE DESTAQUE FÍSICO (ÚLTIMA MEDIÇÃO IMPORTADA) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Executado Acumulado Real */}
-        <div className="bg-slate-900/90 border border-cyan-500/40 rounded-xl p-4 shadow-lg relative overflow-hidden">
-          <div className="flex items-center justify-between text-xs text-cyan-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-cyan-500/40 rounded-xl p-4 shadow-sm dark:shadow-lg relative overflow-hidden">
+          <div className="flex items-center justify-between text-xs text-cyan-600 dark:text-cyan-400 font-semibold mb-1">
             <span>Executado Acumulado</span>
-            <Target className="w-4 h-4 text-cyan-400" />
+            <Target className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />
           </div>
-          <div className="text-2xl font-extrabold text-white font-mono mt-1">
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono mt-1">
             {execAcc.toFixed(2)}%
           </div>
-          <div className="text-[11px] text-cyan-300/80 mt-1 flex items-center gap-1">
+          <div className="text-[11px] text-cyan-700 dark:text-cyan-300/80 mt-1 flex items-center gap-1 font-medium">
             <span>Última medição: Set/2026</span>
           </div>
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-950">
-            <div className="h-full bg-cyan-400" style={{ width: `${Math.min(execAcc, 100)}%` }} />
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-cyan-100 dark:bg-cyan-950">
+            <div className="h-full bg-cyan-500 dark:bg-cyan-400" style={{ width: `${Math.min(execAcc, 100)}%` }} />
           </div>
         </div>
 
         {/* Planejado Acumulado */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Planejado na Data</span>
-            <Calendar className="w-4 h-4 text-blue-400" />
+            <Calendar className="w-4 h-4 text-blue-500 dark:text-blue-400" />
           </div>
-          <div className="text-2xl font-extrabold text-blue-300 font-mono mt-1">
+          <div className="text-2xl font-extrabold text-blue-600 dark:text-blue-300 font-mono mt-1">
             {plannedAcc.toFixed(2)}%
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             Meta PCO: 48,59%
           </div>
         </div>
 
         {/* Desvio Físico (p.p.) */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Desvio Físico</span>
             {physicalDeviation >= 0 ? (
-              <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+              <ArrowUpRight className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
             ) : (
-              <ArrowDownRight className="w-4 h-4 text-amber-400" />
+              <ArrowDownRight className="w-4 h-4 text-amber-500 dark:text-amber-400" />
             )}
           </div>
           <div className={`text-2xl font-extrabold font-mono mt-1 ${
-            physicalDeviation >= 0 ? 'text-emerald-400' : 'text-amber-400'
+            physicalDeviation >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
           }`}>
             {physicalDeviation > 0 ? `+${physicalDeviation.toFixed(2)}` : physicalDeviation.toFixed(2)} p.p.
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             {physicalDeviation < 0 ? 'Leve atraso no cronograma' : 'Ritmo adiantado'}
           </div>
         </div>
 
         {/* Executado no Mês */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Executado no Mês</span>
-            <Activity className="w-4 h-4 text-emerald-400" />
+            <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
           </div>
-          <div className="text-2xl font-extrabold text-emerald-300 font-mono mt-1">
+          <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-300 font-mono mt-1">
             +{executedMonth.toFixed(2)}%
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             Produção física de Set/26
           </div>
         </div>
 
         {/* Saldo Físico a Executar */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Saldo Físico</span>
-            <Clock className="w-4 h-4 text-purple-400" />
+            <Clock className="w-4 h-4 text-purple-500 dark:text-purple-400" />
           </div>
-          <div className="text-2xl font-extrabold text-purple-300 font-mono mt-1">
+          <div className="text-2xl font-extrabold text-purple-600 dark:text-purple-300 font-mono mt-1">
             {physicalBalance.toFixed(2)}%
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             Avanço até fev/2028
           </div>
         </div>
@@ -262,7 +222,7 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
       {/* 2. DESDOBRAMENTO: GRUPOS INDIRETOS VS GRUPOS DIRETOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Card Indiretos */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow">
+        <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm dark:shadow">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-bold text-white flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />
@@ -304,85 +264,85 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
         </div>
 
         {/* Card Diretos */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow">
+        <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm dark:shadow">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold text-white flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-cyan-400 inline-block" />
+            <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-cyan-500 dark:bg-cyan-400 inline-block" />
               Itens Diretos (Aba % DIRETOS)
             </span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-mono font-bold">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border border-cyan-500/20 font-mono font-bold">
               Peso: {directs.weight.toFixed(2)}%
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2 my-3 text-center">
-            <div className="p-2.5 rounded-lg bg-slate-800/40">
-              <span className="text-[11px] text-slate-400 block">Custo Orçado</span>
-              <span className="text-xs font-bold text-white font-mono">
+            <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/40">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Custo Orçado</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-white font-mono">
                 R$ {directs.budget.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
               </span>
             </div>
-            <div className="p-2.5 rounded-lg bg-slate-800/40">
-              <span className="text-[11px] text-slate-400 block">Executado Acum.</span>
-              <span className="text-xs font-bold text-emerald-400 font-mono">
+            <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/40">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Executado Acum.</span>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                 {directs.executedAcc.toFixed(2)}%
               </span>
             </div>
-            <div className="p-2.5 rounded-lg bg-slate-800/40">
-              <span className="text-[11px] text-slate-400 block">Saldo</span>
-              <span className="text-xs font-bold text-cyan-400 font-mono">
+            <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/40">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Saldo</span>
+              <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400 font-mono">
                 {directs.balance.toFixed(2)}%
               </span>
             </div>
           </div>
-          <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden mt-3">
+          <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden mt-3">
             <div
-              className="h-full bg-cyan-400 rounded-full"
+              className="h-full bg-cyan-500 dark:bg-cyan-400 rounded-full"
               style={{ width: `${(directs.executedAcc / directs.weight) * 100}%` }}
             />
           </div>
-          <span className="text-[10px] text-slate-400 block mt-1.5 text-right">
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-1.5 text-right">
             {((directs.executedAcc / directs.weight) * 100).toFixed(1)}% do grupo direto concluído
           </span>
         </div>
       </div>
 
       {/* 3. CURVA S: PLANEJAMENTO MENSAL E ACUMULADO DINÂMICO */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow space-y-4">
+      <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm dark:shadow space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-cyan-400" />
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />
               Curva S de Planejamento Físico PCO (Mensal e Acumulado)
             </h4>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Projeção mensal de avanço físico ponderado de Setembro de 2026 até Fevereiro de 2028.
             </p>
           </div>
-          <span className="text-xs font-mono font-bold px-3 py-1 rounded bg-slate-800 text-cyan-300 border border-slate-700">
+          <span className="text-xs font-mono font-bold px-3 py-1 rounded bg-slate-100 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300 border border-slate-300 dark:border-slate-700">
             {sCurvePeriods.length} competências mapeadas
           </span>
         </div>
 
         {/* Visualização de barras de avanço acumulado */}
         <div className="overflow-x-auto pb-2">
-          <div className="min-w-[720px] flex items-end gap-2.5 h-60 pt-20 px-2 border-b border-slate-800">
+          <div className="min-w-[720px] flex items-end gap-2.5 h-60 pt-20 px-2 border-b border-slate-200 dark:border-slate-800">
             {sCurvePeriods.map((p, idx) => {
               const isCurrent = p.period_key === '2026-09';
               const heightPct = Math.max(8, p.planned_percent_accumulated);
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-1 group relative">
                   {/* Tooltip com posicionamento desobstruído e indicador */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 absolute -top-16 z-30 pointer-events-none bg-slate-950/95 border border-cyan-400/80 rounded-lg px-2.5 py-1.5 text-[11px] text-white shadow-2xl backdrop-blur-md whitespace-nowrap">
+                  <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 absolute -top-16 z-30 pointer-events-none bg-slate-900 dark:bg-slate-950/95 border border-cyan-400/80 rounded-lg px-2.5 py-1.5 text-[11px] text-white shadow-2xl backdrop-blur-md whitespace-nowrap">
                     <div className="font-bold">{p.period_label}: {p.planned_percent_accumulated.toFixed(1)}% Acum.</div>
                     <div className="text-cyan-300 font-medium">+{p.planned_percent_month.toFixed(2)}% no mês</div>
-                    <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-slate-950 border-r border-b border-cyan-400/80 rotate-45" />
+                    <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-slate-900 dark:bg-slate-950 border-r border-b border-cyan-400/80 rotate-45" />
                   </div>
 
-                  <span className="text-[9px] font-mono text-slate-400 mb-0.5">
+                  <span className="text-[9px] font-mono text-slate-500 dark:text-slate-400 mb-0.5">
                     {p.planned_percent_accumulated.toFixed(0)}%
                   </span>
 
-                  <div className="w-full flex items-end justify-center h-28 bg-slate-800/30 rounded-t overflow-hidden">
+                  <div className="w-full flex items-end justify-center h-28 bg-slate-100 dark:bg-slate-800/30 rounded-t overflow-hidden">
                     <div
                       className={`w-full transition-all rounded-t ${
                         isCurrent
@@ -393,7 +353,7 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
                     />
                   </div>
 
-                  <span className={`text-[10px] font-mono mt-1 ${isCurrent ? 'text-cyan-300 font-bold' : 'text-slate-400'}`}>
+                  <span className={`text-[10px] font-mono mt-1 ${isCurrent ? 'text-cyan-600 dark:text-cyan-300 font-bold' : 'text-slate-500 dark:text-slate-400'}`}>
                     {p.period_label}
                   </span>
                 </div>
@@ -404,13 +364,15 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
       </div>
 
       {/* 4. TABELA DAS ETAPAS DA OBRA */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow">
-        <div className="p-4 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm dark:shadow">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('geral')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'geral' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                activeTab === 'geral'
+                  ? 'bg-cyan-500 text-white dark:text-slate-950 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               Todas as Etapas ({macroStages.length})
@@ -418,7 +380,9 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
             <button
               onClick={() => setActiveTab('diretos')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'diretos' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                activeTab === 'diretos'
+                  ? 'bg-cyan-500 text-white dark:text-slate-950 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               Itens Diretos
@@ -426,7 +390,9 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
             <button
               onClick={() => setActiveTab('indiretos')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'indiretos' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
+                activeTab === 'indiretos'
+                  ? 'bg-cyan-500 text-white dark:text-slate-950 font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               Itens Indiretos
@@ -440,14 +406,14 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
               placeholder="Buscar etapa ou código..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500"
             />
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase tracking-wider font-semibold text-[10px]">
+            <thead className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider font-semibold text-[10px]">
               <tr>
                 <th className="p-3">Código</th>
                 <th className="p-3">Etapa / Atividade</th>
@@ -456,59 +422,46 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
                 <th className="p-3 text-right">Executado Acum.</th>
                 <th className="p-3 text-center">Status</th>
                 <th className="p-3 w-32">Barra de Progresso</th>
-                <th className="p-3 text-center">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-medium">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium text-slate-800 dark:text-slate-200">
               {filteredStages.map((s, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="p-3 font-mono font-bold text-cyan-400">{s.code}</td>
-                  <td className="p-3 font-semibold text-white">{s.name}</td>
+                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                  <td className="p-3 font-mono font-bold text-cyan-600 dark:text-cyan-400">{s.code}</td>
+                  <td className="p-3 font-semibold text-slate-900 dark:text-white">{s.name}</td>
                   <td className="p-3 text-center">
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                      s.isDirect ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                      s.isDirect
+                        ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-500/20'
+                        : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20'
                     }`}>
                       {s.isDirect ? 'Direto' : 'Indireto'}
                     </span>
                   </td>
-                  <td className="p-3 text-right font-mono font-bold text-slate-300">
+                  <td className="p-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">
                     {s.weight.toFixed(2)}%
                   </td>
-                  <td className="p-3 text-right font-mono font-bold text-emerald-400">
+                  <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
                     {s.progress.toFixed(2)}%
                   </td>
                   <td className="p-3 text-center">
                     <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
                       s.status === 'concluida'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30'
                         : s.status === 'em_andamento'
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                        : 'bg-slate-800 text-slate-400'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300 border border-blue-300 dark:border-blue-500/30'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                     }`}>
                       {s.status === 'concluida' ? 'Concluída' : s.status === 'em_andamento' ? 'Em Andamento' : 'Não Iniciada'}
                     </span>
                   </td>
                   <td className="p-3">
-                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                    <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${s.progress === 100 ? 'bg-emerald-400' : 'bg-cyan-400'}`}
+                        className={`h-full rounded-full ${s.progress === 100 ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-cyan-500 dark:bg-cyan-400'}`}
                         style={{ width: `${s.progress}%` }}
                       />
                     </div>
-                  </td>
-                  <td className="p-3 text-center">
-                    <button
-                      onClick={() => {
-                        setEditingStage({ id: s.id, code: s.code, name: s.name, progress: s.progress });
-                        setEditPercentInput(s.progress.toString());
-                        setEditReason('');
-                      }}
-                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-cyan-600/20 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/30 text-[11px] font-semibold inline-flex items-center gap-1 transition-all"
-                      title="Editar avanço físico desta etapa"
-                    >
-                      <Edit3 className="w-3 h-3" />
-                      <span>Editar</span>
-                    </button>
                   </td>
                 </tr>
               ))}
@@ -516,81 +469,6 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
           </table>
         </div>
       </div>
-
-      {/* Modal de Apontamento Rápido de Progresso */}
-      {editingStage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Edit3 className="w-4 h-4 text-cyan-400" />
-                  <span>Apontar Avanço Físico</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Etapa <strong className="text-cyan-300">{editingStage.code}</strong> - {editingStage.name}
-                </p>
-              </div>
-              <button
-                onClick={() => setEditingStage(null)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Novo Percentual Executado (%)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={editPercentInput}
-                  onChange={(e) => setEditPercentInput(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono font-bold focus:outline-none focus:border-cyan-500"
-                  autoFocus
-                />
-                <span className="text-[10px] text-slate-400 block mt-1">
-                  Valor anterior: {editingStage.progress.toFixed(2)}%
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Observação / Justificativa da Medição
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Ex: Medição quinzenal de campo, vistoria realizada..."
-                  value={editReason}
-                  onChange={(e) => setEditReason(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-              <button
-                onClick={() => setEditingStage(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveProgress}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 flex items-center gap-1.5 transition-all shadow-md shadow-cyan-500/20"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>Salvar e Recalcular</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

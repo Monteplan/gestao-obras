@@ -19,7 +19,6 @@ import {
   Building2,
   Database,
 } from 'lucide-react';
-import { DataProvenanceBadge } from '../../common/DataProvenanceBadge';
 
 interface AtriumFinancialDashboardProps {
   work: Work;
@@ -99,155 +98,132 @@ export const AtriumFinancialDashboard: React.FC<AtriumFinancialDashboardProps> =
 
   return (
     <div className="space-y-6">
-      {/* BARRA DE PROCEDÊNCIA E AUDITORIA FINANCEIRA (ITEM 9 DO PROMPT) */}
-      <div className="glass-card p-4 rounded-2xl border border-slate-800 bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <DataProvenanceBadge
-            type="erp"
-            sourceFile="Extrato ERP - Aba REAL"
-            details="5.635 lançamentos contábeis reais"
-          />
-          <DataProvenanceBadge
-            type="pco"
-            sourceFile="Aba BASE ORÇAMENTO"
-            details="261 contas e R$ 25.705.359,47"
-          />
-          <DataProvenanceBadge
-            type="calculado"
-            details="2º De-Para (Totalizadoras) e 1º De-Para (SWS)"
-          />
-        </div>
-        <div className="text-[11px] text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-lg">
-          Segregação rigorosa: Custos de Obra isolados de Despesas Corporativas e Receitas
-        </div>
-      </div>
-
       {/* 1. CARDS DE INDICADORES FINANCEIROS GERAIS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Orçamento-Base Total */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Orçamento-Base (PCO)</span>
-            <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
+            <FileSpreadsheet className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
           </div>
-          <div className="text-2xl font-extrabold text-white font-mono mt-1">
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono mt-1">
             R$ {baseBudgetTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[11px] text-cyan-400 mt-1">
+          <div className="text-[11px] text-cyan-600 dark:text-cyan-400 mt-1 font-medium">
             320 linhas de orçamento vinculadas
           </div>
         </div>
 
         {/* Custo Direto Incorrido Real */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Custos Incorridos de Obra</span>
-            <TrendingDown className="w-4 h-4 text-amber-400" />
+            <TrendingDown className="w-4 h-4 text-amber-500 dark:text-amber-400" />
           </div>
-          <div className="text-2xl font-extrabold text-amber-300 font-mono mt-1">
+          <div className="text-2xl font-extrabold text-amber-600 dark:text-amber-300 font-mono mt-1">
             R$ {directCostsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             {consumedPercent.toFixed(1)}% do orçamento consumido
           </div>
         </div>
 
         {/* Saldo Orçamentário Disponível */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Saldo Orçado Disponível</span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <DollarSign className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
           </div>
-          <div className="text-2xl font-extrabold text-emerald-400 font-mono mt-1">
+          <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1">
             R$ {budgetBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             {(100 - consumedPercent).toFixed(1)}% de margem orçada
           </div>
         </div>
 
         {/* Total Bruto Lançamentos Reais */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow">
-          <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
             <span>Total Movimentado (ERP)</span>
-            <Layers className="w-4 h-4 text-purple-400" />
+            <Layers className="w-4 h-4 text-purple-500 dark:text-purple-400" />
           </div>
-          <div className="text-2xl font-extrabold text-purple-300 font-mono mt-1">
+          <div className="text-2xl font-extrabold text-purple-600 dark:text-purple-300 font-mono mt-1">
             R$ {realGrossTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             {realLinesCount.toLocaleString('pt-BR')} lançamentos na aba REAL
           </div>
         </div>
       </div>
 
       {/* 2. SEGREGAÇÃO DE NATUREZA DO LANÇAMENTO (REGRA OBRIGATÓRIA: RECEITAS != CUSTO) */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-4 shadow">
+      <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 shadow-sm dark:shadow">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
               Segregação por Natureza Financeira (Tratamento Rigoroso da Aba REAL)
             </h4>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Receitas de vendas de unidades e rendimentos não são somados automaticamente como custo de obra.
             </p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="p-3 rounded-lg bg-slate-800/60 border border-cyan-500/30">
-            <span className="text-[10px] uppercase font-bold text-cyan-400 block mb-1">Custo de Obra</span>
-            <span className="text-sm font-bold text-white font-mono">
+          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-cyan-300 dark:border-cyan-500/30">
+            <span className="text-[10px] uppercase font-bold text-cyan-700 dark:text-cyan-400 block mb-1">Custo de Obra</span>
+            <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
               R$ {(natureTotals.custo_obra / 1e6).toFixed(2)}M
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Estrutura, fundações, etc.</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">Estrutura, fundações, etc.</span>
           </div>
 
-          <div className="p-3 rounded-lg bg-slate-800/60 border border-amber-500/30">
-            <span className="text-[10px] uppercase font-bold text-amber-400 block mb-1">Despesa de Obra</span>
-            <span className="text-sm font-bold text-white font-mono">
+          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-amber-300 dark:border-amber-500/30">
+            <span className="text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400 block mb-1">Despesa de Obra</span>
+            <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
               R$ {(natureTotals.despesa_obra / 1e6).toFixed(2)}M
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Canteiro, máquinas, etc.</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">Canteiro, máquinas, etc.</span>
           </div>
 
-          <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700">
-            <span className="text-[10px] uppercase font-bold text-slate-300 block mb-1">Desp. Administrativa</span>
-            <span className="text-sm font-bold text-white font-mono">
+          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700">
+            <span className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 block mb-1">Desp. Administrativa</span>
+            <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
               R$ {(natureTotals.despesa_administrativa / 1e3).toFixed(0)}k
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Honorários, tarifas, etc.</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">Honorários, tarifas, etc.</span>
           </div>
 
-          <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/40">
-            <span className="text-[10px] uppercase font-bold text-emerald-400 block mb-1">Receita de Vendas</span>
-            <span className="text-sm font-bold text-emerald-300 font-mono">
+          <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/40">
+            <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 block mb-1">Receita de Vendas</span>
+            <span className="text-sm font-bold text-emerald-700 dark:text-emerald-300 font-mono">
               R$ {(natureTotals.receita / 1e6).toFixed(2)}M
             </span>
-            <span className="text-[10px] text-emerald-400/80 block mt-0.5">Entrada de clientes</span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400/80 block mt-0.5">Entrada de clientes</span>
           </div>
 
-          <div className="p-3 rounded-lg bg-purple-950/40 border border-purple-500/40">
-            <span className="text-[10px] uppercase font-bold text-purple-400 block mb-1">Rendimento Financ.</span>
-            <span className="text-sm font-bold text-purple-300 font-mono">
+          <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-300 dark:border-purple-500/40">
+            <span className="text-[10px] uppercase font-bold text-purple-700 dark:text-purple-400 block mb-1">Rendimento Financ.</span>
+            <span className="text-sm font-bold text-purple-700 dark:text-purple-300 font-mono">
               R$ {(natureTotals.rendimento_financeiro / 1e3).toFixed(0)}k
             </span>
-            <span className="text-[10px] text-purple-400/80 block mt-0.5">Aplicações financeiras</span>
+            <span className="text-[10px] text-purple-600 dark:text-purple-400/80 block mt-0.5">Aplicações financeiras</span>
           </div>
 
-          <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Transferências/Aj.</span>
-            <span className="text-sm font-bold text-slate-200 font-mono">
+          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700">
+            <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 block mb-1">Transferências/Aj.</span>
+            <span className="text-sm font-bold text-slate-900 dark:text-slate-200 font-mono">
               R$ {(natureTotals.transferencia_ajuste / 1e3).toFixed(0)}k
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">Compensações e perdas</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">Compensações e perdas</span>
           </div>
         </div>
       </div>
 
       {/* 3. NAVEGAÇÃO DE VISÕES FINANCEIRAS */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow">
+      <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm dark:shadow">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button

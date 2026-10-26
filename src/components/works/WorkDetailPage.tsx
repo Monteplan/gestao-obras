@@ -43,7 +43,6 @@ import { AtriumFinancialDashboard } from './atrium/AtriumFinancialDashboard';
 import { WorkResultAnalysis } from '../budget/WorkResultAnalysis';
 import { BaseOrcamentoTable } from '../budget/BaseOrcamentoTable';
 import { ATRIUM_DRE_SUMMARY } from '../../lib/atrium-dre-data';
-import { DataProvenanceBadge } from '../common/DataProvenanceBadge';
 import {
   PieChart,
   Pie,
@@ -82,7 +81,9 @@ export const WorkDetailPage: React.FC<WorkDetailPageProps> = ({ workId, onBack, 
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  const [activeTab, setActiveTab] = useState<string>(
+    initialTab === 'dados_empreendimento' ? 'dados_empreendimento' : 'resumo'
+  );
   const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
   const [isPcoModalOpen, setIsPcoModalOpen] = useState<boolean>(false);
   const [isEditWorkModalOpen, setIsEditWorkModalOpen] = useState<boolean>(false);
@@ -170,72 +171,41 @@ export const WorkDetailPage: React.FC<WorkDetailPageProps> = ({ workId, onBack, 
   const tabs = [
     { id: 'resumo', label: 'Resumo', icon: Building2 },
     { id: 'dados_empreendimento', label: 'Dados do Empreendimento', icon: Home },
-    { id: 'fisico_pco', label: 'Acompanhamento Físico (PCO)', icon: Activity },
-    { id: 'financeiro_erp', label: 'Acompanhamento Financeiro (ERP)', icon: DollarSign },
-    { id: 'etapas', label: 'Etapas & Cronograma', icon: GitFork },
-    { id: 'orcamento', label: 'Orçamento & Custos', icon: Calculator },
-    { id: 'compras', label: 'Compras & Suprimentos', icon: ShoppingCart },
-    ...(work.labor_enabled ? [{ id: 'mao_de_obra', label: 'Mão de Obra', icon: Users }] : []),
-    { id: 'resultado', label: 'Resultado & Margem', icon: Wallet },
-    { id: 'documentos', label: 'Histórico & Auditoria', icon: History },
   ];
 
   return (
     <div className="space-y-6 pb-12">
       {/* Top Banner da Obra */}
-      <div className="glass-card p-6 rounded-3xl border border-slate-800">
+      <div className="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <button
               onClick={onBack}
-              className="inline-flex items-center space-x-1.5 text-xs text-slate-400 hover:text-white mb-2 transition-colors"
+              className="inline-flex items-center space-x-1.5 text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white mb-2 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Voltar para Lista de Obras</span>
             </button>
 
             <div className="flex items-center flex-wrap gap-2.5">
-              <span className="px-2.5 py-1 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs font-mono font-bold">
+              <span className="px-2.5 py-1 rounded-lg bg-blue-600/10 dark:bg-blue-600/20 text-[#004171] dark:text-blue-400 border border-blue-500/20 dark:border-blue-500/30 text-xs font-mono font-bold">
                 {work.code}
               </span>
-              <h1 className="text-2xl font-black text-white tracking-tight">{work.name}</h1>
-
-              {/* Indicador Visual de Procedência de Dados (Item 4 e 7 do Prompt) */}
-              {isAtriumWork ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <DataProvenanceBadge
-                    type="pco"
-                    compact
-                    sourceFile="PCO SET/26"
-                    baseDate="Set/2026"
-                  />
-                  <DataProvenanceBadge
-                    type="erp"
-                    compact
-                    sourceFile="Extrato REAL ERP"
-                  />
-                </div>
-              ) : (
-                <DataProvenanceBadge
-                  type="demonstracao"
-                  compact
-                  details="Obra sintética em ambiente de demonstração"
-                />
-              )}
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{work.name}</h1>
 
               {/* Seletor Rápido de Status da Obra */}
-              <div className="flex items-center space-x-1.5 bg-slate-900/90 px-2.5 py-1 rounded-xl border border-slate-700/80 shadow-sm" title="Alterar status cadastral da obra">
-                <span className="text-[11px] text-slate-400 font-semibold">Status:</span>
+              <div className="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-900/90 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-sm" title="Alterar status cadastral da obra">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">Status:</span>
                 <select
                   value={work.status}
                   onChange={(e) => updateWork(work.id, { status: e.target.value as any })}
-                  className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer"
+                  className="bg-transparent text-slate-900 dark:text-white font-bold text-xs focus:outline-none cursor-pointer"
                 >
-                  <option value="planejamento" className="bg-slate-900">Planejamento</option>
-                  <option value="em_andamento" className="bg-slate-900">Em Andamento</option>
-                  <option value="pausada" className="bg-slate-900">Pausada</option>
-                  <option value="concluida" className="bg-slate-900">Concluída</option>
-                  <option value="cancelada" className="bg-slate-900">Cancelada</option>
+                  <option value="planejamento" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">Planejamento</option>
+                  <option value="em_andamento" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">Em Andamento</option>
+                  <option value="pausada" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">Pausada</option>
+                  <option value="concluida" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">Concluída</option>
+                  <option value="cancelada" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">Cancelada</option>
                 </select>
               </div>
 
@@ -311,46 +281,46 @@ export const WorkDetailPage: React.FC<WorkDetailPageProps> = ({ workId, onBack, 
         </div>
 
         {/* Resumo Superior de Indicadores Chave da Obra */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-5 border-t border-slate-800/80 text-xs">
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Avanço Físico</span>
-            <div className="text-lg font-black text-white mt-0.5">{formatPercent(displayProgress)}</div>
-            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-5 border-t border-slate-200 dark:border-slate-800/80 text-xs">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">Avanço Físico</span>
+            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">{formatPercent(displayProgress)}</div>
+            <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1.5">
               <div className="bg-blue-500 h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, displayProgress))}%` }} />
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Prazo / Término</span>
-            <div className="text-base font-bold text-white mt-0.5">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">Prazo / Término</span>
+            <div className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
               {prazoMonthsText}
             </div>
             <span className="text-[10px] text-slate-500 block mt-0.5">Prev: {formatDateBR(work.planned_end)}</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Orçado Aprovado</span>
-            <div className="text-base font-bold text-slate-200 mt-0.5">{formatBRL(financials.approvedBudget)}</div>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">Orçado Aprovado</span>
+            <div className="text-base font-bold text-slate-800 dark:text-slate-200 mt-0.5">{formatBRL(financials.approvedBudget)}</div>
             <span className="text-[10px] text-slate-500 block mt-0.5">Consumo: {formatPercent(financials.consumedPercent)}</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Custos Incorridos</span>
-            <div className="text-base font-bold text-cyan-400 mt-0.5">{formatBRL(financials.incurredCosts)}</div>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">Custos Incorridos</span>
+            <div className="text-base font-bold text-cyan-700 dark:text-cyan-400 mt-0.5">{formatBRL(financials.incurredCosts)}</div>
             <span className="text-[10px] text-slate-500 block mt-0.5">Comprom: {formatBRL(financials.committedOrders)}</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Saldo Disponível</span>
-            <div className={`text-base font-bold mt-0.5 ${financials.availableBalance < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">Saldo Disponível</span>
+            <div className={`text-base font-bold mt-0.5 ${financials.availableBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
               {formatBRL(financials.availableBalance)}
             </div>
             <span className="text-[10px] text-slate-500 block mt-0.5">Orçado - Incorrido - Aberto</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Margem Projetada</span>
-            <div className="text-base font-bold text-indigo-400 mt-0.5">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">Margem Projetada</span>
+            <div className="text-base font-bold text-indigo-700 dark:text-indigo-400 mt-0.5">
               {formatPercent(isAtriumWork ? ATRIUM_DRE_SUMMARY.resultadoFinanceiro.margemOperacionalOrcada : financials.projectedMarginPercent)}
             </div>
             <span className="text-[10px] text-slate-500 block mt-0.5">
@@ -360,7 +330,7 @@ export const WorkDetailPage: React.FC<WorkDetailPageProps> = ({ workId, onBack, 
         </div>
 
         {/* Abas de Navegação do Detalhe */}
-        <div className="flex items-center space-x-1 mt-6 border-b border-slate-800 overflow-x-auto pb-1">
+        <div className="flex items-center space-x-1 mt-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-1">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -371,7 +341,7 @@ export const WorkDetailPage: React.FC<WorkDetailPageProps> = ({ workId, onBack, 
                 className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900'
                 }`}
               >
                 <Icon className="w-4 h-4" />
