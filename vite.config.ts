@@ -13,6 +13,8 @@ export default defineConfig({
     port: 3000,
     host: true,
     watch: {
+      usePolling: true,
+      interval: 300,
       ignored: [
         '**/scratch/**',
         '**/scratch_chrome/**',

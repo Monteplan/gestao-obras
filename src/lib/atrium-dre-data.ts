@@ -14,6 +14,10 @@ export interface DreItem {
   isTotal: boolean;
   category: string;
   subgroup: string;
+  measuredPercent?: number;
+  orcadoMedido?: number;
+  variacaoMedido?: number;
+  percentDesempenhoMedido?: number;
 }
 
 export const ATRIUM_DRE_SUMMARY = {

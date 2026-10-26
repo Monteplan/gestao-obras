@@ -36,6 +36,9 @@ import {
   Sparkles,
   Activity,
   Calculator,
+  Gauge,
+  SlidersHorizontal,
+  Target,
 } from 'lucide-react';
 import { DataProvenanceBadge } from '../common/DataProvenanceBadge';
 import { computeDynamicDre } from '../../lib/dre-calculator';
@@ -49,10 +52,12 @@ interface WorkResultAnalysisProps {
 }
 
 export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: propWork }) => {
-  const { works, revenues, incurredCosts, customDeParaRules } = useData();
+  const { works, stages, revenues, incurredCosts, customDeParaRules } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
 
   const [activeSubTab, setActiveSubTab] = useState<'dre' | 'indicadores'>('dre');
+  // Modo de comparação: 'total' = Orçamento Global (100%) vs Realizado | 'measured' = Orçado até a Medição EAP vs Realizado
+  const [comparisonMode, setComparisonMode] = useState<'total' | 'measured'>('total');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [selectedDreLine, setSelectedDreLine] = useState<DreItem | null>(null);
@@ -98,6 +103,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
   };
 
   // Motor de Cálculo Dinâmico de Toda a DRE (Receitas, Deduções, Custos Civis, Mão de Obra e Despesas)
+  // com suporte simultâneo à Visão de Orçamento Total e Visão de Medição EAP
   const dynamicDreData = useMemo(() => {
     return computeDynamicDre(
       ATRIUM_DRE_LINES,
@@ -105,11 +111,13 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
       incurredCosts,
       revenues,
       customDeParaRules,
-      currentWork.id
+      currentWork.id,
+      stages
     );
-  }, [incurredCosts, revenues, customDeParaRules, currentWork.id]);
+  }, [incurredCosts, revenues, customDeParaRules, currentWork.id, stages]);
 
   const summary = dynamicDreData.summary;
+  const measuredSummary = dynamicDreData.measuredSummary;
 
   // Filtragem da DRE com todas as 200+ contas recalculadas dinamicamente
   const filteredDreLines = useMemo(() => {
@@ -165,6 +173,54 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         </div>
       </div>
 
+      {/* SELETOR DE MODO DE COMPARAÇÃO DO ORÇAMENTO (GLOBAL vs MEDIÇÃO EAP) */}
+      <div className="p-3.5 bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+            <SlidersHorizontal className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-white flex items-center space-x-2">
+              <span>Seletor de Visão do Orçamento</span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-800/60 flex items-center space-x-1">
+                <Gauge className="w-3 h-3 text-blue-400" />
+                <span>Medição Atual EAP: {formatPercent(dynamicDreData.globalProgressPercent, 2)}</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {comparisonMode === 'total'
+                ? 'Modo 1 Ativo: Orçamento Total (100% da vida útil do empreendimento) vs Realizado. Utilizado para controlar o saldo global a gastar.'
+                : 'Modo 2 Ativo: Orçado até a Medição EAP vs Realizado. Utilizado para comparar o que foi gasto com o que deveria ter sido gasto para o avanço físico medido.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+          <button
+            onClick={() => setComparisonMode('total')}
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              comparisonMode === 'total'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <PieChart className="w-3.5 h-3.5" />
+            <span>1. Orçamento Total (100%)</span>
+          </button>
+          <button
+            onClick={() => setComparisonMode('measured')}
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              comparisonMode === 'measured'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            <span>2. Orçado até a Medição EAP</span>
+          </button>
+        </div>
+      </div>
+
       {/* 4 CARDS PRINCIPAIS: RECEITA, CUSTO DE OBRA, DESPESAS E RESULTADO FINANCEIRO */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Receitas */}
@@ -181,25 +237,35 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
             {formatBRL(summary.receita.realizadoBruto)}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            Orçado Previsto: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.receita.orcadoBruto)}</strong>
+            {comparisonMode === 'total' ? (
+              <>Orçado Previsto: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.receita.orcadoBruto)}</strong></>
+            ) : (
+              <>Orçado até Medição ({formatPercent(dynamicDreData.globalProgressPercent, 1)}): <strong className="text-sky-600 dark:text-sky-400">{formatBRL(measuredSummary.receita.orcadoMedido)}</strong></>
+            )}
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-[11px]">% Realizado:</span>
+              <span className="text-slate-500 text-[11px]">
+                {comparisonMode === 'total' ? '% Realizado s/ Total:' : '% Desempenho s/ Medição:'}
+              </span>
               <span className="font-bold text-sky-600 dark:text-sky-400">
-                {formatPercent(summary.receita.percentBruto, 2)}
+                {formatPercent(comparisonMode === 'total' ? summary.receita.percentBruto : measuredSummary.receita.percentDesempenho, 2)}
               </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div
                 className="h-full bg-sky-500 rounded-full"
-                style={{ width: `${Math.min(100, summary.receita.percentBruto)}%` }}
+                style={{ width: `${Math.min(100, comparisonMode === 'total' ? summary.receita.percentBruto : measuredSummary.receita.percentDesempenho)}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-              <span>Receita Líquida Real:</span>
-              <strong className="text-slate-800 dark:text-slate-200">{formatBRL(summary.receita.liquidaRealizado)}</strong>
+              <span>{comparisonMode === 'total' ? 'Receita Líquida Real:' : 'Variação s/ Medido:'}</span>
+              <strong className="text-slate-800 dark:text-slate-200">
+                {comparisonMode === 'total'
+                  ? formatBRL(summary.receita.liquidaRealizado)
+                  : (measuredSummary.receita.variacaoMedido >= 0 ? `+${formatBRL(measuredSummary.receita.variacaoMedido)}` : formatBRL(measuredSummary.receita.variacaoMedido))}
+              </strong>
             </div>
             <div className="text-[10px] text-slate-400">
               Deduções/Impostos RET: {formatBRL(summary.receita.deducoesRealizado)}
@@ -221,29 +287,55 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
             {formatBRL(summary.custoObra.realizado)}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            Orçado Obra: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.custoObra.orcado)}</strong>
+            {comparisonMode === 'total' ? (
+              <>Orçado Obra (100%): <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.custoObra.orcado)}</strong></>
+            ) : (
+              <>Orçado até Medição EAP: <strong className="text-amber-500 dark:text-amber-400">{formatBRL(measuredSummary.custoObra.orcadoMedido)}</strong></>
+            )}
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-[11px]">% Executado:</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400">
-                {formatPercent(summary.custoObra.percent, 2)}
+              <span className="text-slate-500 text-[11px]">
+                {comparisonMode === 'total' ? '% Executado s/ Total:' : 'Desempenho s/ Medição:'}
+              </span>
+              <span className={`font-bold ${
+                comparisonMode === 'total'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : measuredSummary.custoObra.variacaoMedido <= 0
+                  ? 'text-emerald-500'
+                  : 'text-rose-500'
+              }`}>
+                {comparisonMode === 'total'
+                  ? formatPercent(summary.custoObra.percent, 2)
+                  : `${formatPercent(measuredSummary.custoObra.percentDesempenho, 1)} (${measuredSummary.custoObra.variacaoMedido <= 0 ? 'Econômico' : 'Estouro'})`}
               </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div
-                className="h-full bg-amber-500 rounded-full"
-                style={{ width: `${Math.min(100, summary.custoObra.percent)}%` }}
+                className={`h-full rounded-full ${
+                  comparisonMode === 'total'
+                    ? 'bg-amber-500'
+                    : measuredSummary.custoObra.variacaoMedido <= 0 ? 'bg-emerald-500' : 'bg-rose-500'
+                }`}
+                style={{ width: `${Math.min(100, comparisonMode === 'total' ? summary.custoObra.percent : measuredSummary.custoObra.percentDesempenho)}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-              <span>Materiais & Serviços:</span>
-              <strong className="text-slate-800 dark:text-slate-200">{formatBRL(summary.custoObra.materiaisServicos.realizado)}</strong>
+              <span>{comparisonMode === 'total' ? 'Materiais & Serviços:' : 'Desvio s/ Medição:'}</span>
+              <strong className={comparisonMode === 'total' ? 'text-slate-800 dark:text-slate-200' : measuredSummary.custoObra.variacaoMedido <= 0 ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold'}>
+                {comparisonMode === 'total'
+                  ? formatBRL(summary.custoObra.materiaisServicos.realizado)
+                  : (measuredSummary.custoObra.variacaoMedido > 0 ? `+${formatBRL(measuredSummary.custoObra.variacaoMedido)}` : formatBRL(measuredSummary.custoObra.variacaoMedido))}
+              </strong>
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400">
-              <span>Mão de Obra:</span>
-              <span>{formatBRL(summary.custoObra.maoDeObra.realizado)}</span>
+              <span>{comparisonMode === 'total' ? 'Mão de Obra:' : 'Status da Fase:'}</span>
+              <span>
+                {comparisonMode === 'total'
+                  ? formatBRL(summary.custoObra.maoDeObra.realizado)
+                  : (measuredSummary.custoObra.variacaoMedido <= 0 ? 'Dentro do Orçado Medido' : 'Sobrecusto na Execução')}
+              </span>
             </div>
           </div>
         </div>
@@ -262,29 +354,53 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
             {formatBRL(summary.despesas.realizado)}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            Orçado Total: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.despesas.orcado)}</strong>
+            {comparisonMode === 'total' ? (
+              <>Orçado Total (100%): <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.despesas.orcado)}</strong></>
+            ) : (
+              <>Orçado até Medição: <strong className="text-purple-400">{formatBRL(measuredSummary.despesas.orcadoMedido)}</strong></>
+            )}
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-[11px]">% Consumido:</span>
-              <span className="font-bold text-purple-600 dark:text-purple-400">
-                {formatPercent(summary.despesas.percent, 2)}
+              <span className="text-slate-500 text-[11px]">
+                {comparisonMode === 'total' ? '% Consumido s/ Total:' : 'Desempenho s/ Medição:'}
+              </span>
+              <span className={`font-bold ${
+                comparisonMode === 'total'
+                  ? 'text-purple-600 dark:text-purple-400'
+                  : measuredSummary.despesas.variacaoMedido <= 0 ? 'text-emerald-500' : 'text-rose-500'
+              }`}>
+                {comparisonMode === 'total'
+                  ? formatPercent(summary.despesas.percent, 2)
+                  : `${formatPercent(measuredSummary.despesas.percentDesempenho, 1)} (${measuredSummary.despesas.variacaoMedido <= 0 ? 'Econômico' : 'Estouro'})`}
               </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div
-                className="h-full bg-purple-500 rounded-full"
-                style={{ width: `${Math.min(100, summary.despesas.percent)}%` }}
+                className={`h-full rounded-full ${
+                  comparisonMode === 'total'
+                    ? 'bg-purple-500'
+                    : measuredSummary.despesas.variacaoMedido <= 0 ? 'bg-emerald-500' : 'bg-rose-500'
+                }`}
+                style={{ width: `${Math.min(100, comparisonMode === 'total' ? summary.despesas.percent : measuredSummary.despesas.percentDesempenho)}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-              <span>Comissão Corretores:</span>
-              <strong className="text-slate-800 dark:text-slate-200">{formatBRL(summary.despesas.comissoesVendas.realizado)}</strong>
+              <span>{comparisonMode === 'total' ? 'Comissão Corretores:' : 'Desvio s/ Medição:'}</span>
+              <strong className={comparisonMode === 'total' ? 'text-slate-800 dark:text-slate-200' : measuredSummary.despesas.variacaoMedido <= 0 ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold'}>
+                {comparisonMode === 'total'
+                  ? formatBRL(summary.despesas.comissoesVendas.realizado)
+                  : (measuredSummary.despesas.variacaoMedido > 0 ? `+${formatBRL(measuredSummary.despesas.variacaoMedido)}` : formatBRL(measuredSummary.despesas.variacaoMedido))}
+              </strong>
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400">
-              <span>MKT & Propaganda:</span>
-              <span>{formatBRL(summary.despesas.comerciaisMkt.realizado)}</span>
+              <span>{comparisonMode === 'total' ? 'MKT & Propaganda:' : 'Status da Fase:'}</span>
+              <span>
+                {comparisonMode === 'total'
+                  ? formatBRL(summary.despesas.comerciaisMkt.realizado)
+                  : (measuredSummary.despesas.variacaoMedido <= 0 ? 'Dentro da Proporção' : 'Acima da Proporção')}
+              </span>
             </div>
           </div>
         </div>
@@ -293,7 +409,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         <div className="glass-card p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden bg-gradient-to-br from-emerald-500/5 to-transparent">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-              4. Resultado do Empreendimento
+              {comparisonMode === 'total' ? '4. Resultado do Empreendimento' : '4. Resultado da Fase Atual'}
             </span>
             <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <Scale className="w-4 h-4" />
@@ -307,22 +423,36 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
             {formatBRL(summary.resultadoFinanceiro.resultadoOperacionalRealizado)}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            Orçado Previsto: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.resultadoFinanceiro.resultadoOperacionalOrcado)}</strong>
+            {comparisonMode === 'total' ? (
+              <>Orçado Global: <strong className="text-slate-700 dark:text-slate-300">{formatBRL(summary.resultadoFinanceiro.resultadoOperacionalOrcado)}</strong></>
+            ) : (
+              <>Resultado Orçado da Fase: <strong className="text-emerald-500">{formatBRL(measuredSummary.resultadoFinanceiro.resultadoOperacionalMedido)}</strong></>
+            )}
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-[11px]">Margem Orçada:</span>
+              <span className="text-slate-500 text-[11px]">
+                {comparisonMode === 'total' ? 'Margem Orçada:' : 'Desvio da Margem:'}
+              </span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {formatPercent(summary.resultadoFinanceiro.margemOperacionalOrcada, 2)}
+                {comparisonMode === 'total'
+                  ? formatPercent(summary.resultadoFinanceiro.margemOperacionalOrcada, 2)
+                  : formatBRL(measuredSummary.resultadoFinanceiro.desvioOperacionalFase)}
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-              <span>Resultado Caixa (F.C.):</span>
-              <strong className="text-slate-800 dark:text-slate-200">{formatBRL(summary.resultadoFinanceiro.resultadoCaixaRealizado)}</strong>
+              <span>{comparisonMode === 'total' ? 'Resultado Caixa (F.C.):' : 'Diagnóstico da Fase:'}</span>
+              <strong className={comparisonMode === 'total' ? 'text-slate-800 dark:text-slate-200' : measuredSummary.resultadoFinanceiro.statusFase === 'economia' ? 'text-emerald-500' : 'text-amber-500'}>
+                {comparisonMode === 'total'
+                  ? formatBRL(summary.resultadoFinanceiro.resultadoCaixaRealizado)
+                  : (measuredSummary.resultadoFinanceiro.statusFase === 'economia' ? 'Superávit Operacional' : 'Pressão por Antecipação de Custos')}
+              </strong>
             </div>
             <div className="text-[10px] text-slate-400 italic leading-snug pt-1">
-              Fase construtiva de investimento; repasses concentram no término.
+              {comparisonMode === 'total'
+                ? 'Fase construtiva de investimento; repasses concentram no término.'
+                : 'Custos civis incorridos frente ao avanço de 46,22% medido na EAP.'}
             </div>
           </div>
         </div>
@@ -333,25 +463,42 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-center space-x-2 text-emerald-400 font-bold">
             <Scale className="w-4 h-4 shrink-0" />
-            <span>Fórmula do Resultado do Empreendimento = Receita de Vendas (-) Custos de Obra (-) Despesas</span>
+            <span>
+              {comparisonMode === 'total'
+                ? 'Fórmula do Orçamento Total = Receitas (100%) (-) Custos de Obra (100%) (-) Despesas (100%)'
+                : `Fórmula da Medição EAP (${formatPercent(dynamicDreData.globalProgressPercent, 1)} Medido) = Receitas Medidas (-) Custos Medidos (-) Despesas Medidas`}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
-            <div className="flex items-center space-x-1.5">
-              <span className="text-slate-400">Orçado:</span>
-              <span className="text-sky-400 font-semibold">{formatBRL(summary.receita.orcadoBruto)}</span>
-              <span className="text-slate-500">-</span>
-              <span className="text-amber-400 font-semibold">{formatBRL(summary.custoObra.orcado)}</span>
-              <span className="text-slate-500">-</span>
-              <span className="text-purple-400 font-semibold">{formatBRL(summary.despesas.orcado)}</span>
-              <span className="text-slate-500">=</span>
-              <strong className="text-emerald-400 font-black">{formatBRL(summary.resultadoFinanceiro.resultadoOperacionalOrcado)}</strong>
-              <span className="text-emerald-500 text-[11px]">({formatPercent(summary.resultadoFinanceiro.margemOperacionalOrcada, 2)})</span>
-            </div>
+            {comparisonMode === 'total' ? (
+              <div className="flex items-center space-x-1.5">
+                <span className="text-slate-400">Orçado Total:</span>
+                <span className="text-sky-400 font-semibold">{formatBRL(summary.receita.orcadoBruto)}</span>
+                <span className="text-slate-500">-</span>
+                <span className="text-amber-400 font-semibold">{formatBRL(summary.custoObra.orcado)}</span>
+                <span className="text-slate-500">-</span>
+                <span className="text-purple-400 font-semibold">{formatBRL(summary.despesas.orcado)}</span>
+                <span className="text-slate-500">=</span>
+                <strong className="text-emerald-400 font-black">{formatBRL(summary.resultadoFinanceiro.resultadoOperacionalOrcado)}</strong>
+                <span className="text-emerald-500 text-[11px]">({formatPercent(summary.resultadoFinanceiro.margemOperacionalOrcada, 2)})</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1.5">
+                <span className="text-slate-400">Orçado Medição EAP:</span>
+                <span className="text-sky-400 font-semibold">{formatBRL(measuredSummary.receita.orcadoMedido)}</span>
+                <span className="text-slate-500">-</span>
+                <span className="text-amber-400 font-semibold">{formatBRL(measuredSummary.custoObra.orcadoMedido)}</span>
+                <span className="text-slate-500">-</span>
+                <span className="text-purple-400 font-semibold">{formatBRL(measuredSummary.despesas.orcadoMedido)}</span>
+                <span className="text-slate-500">=</span>
+                <strong className="text-emerald-400 font-black">{formatBRL(measuredSummary.resultadoFinanceiro.resultadoOperacionalMedido)}</strong>
+              </div>
+            )}
 
             <div className="hidden xl:inline text-slate-600">|</div>
 
             <div className="flex items-center space-x-1.5">
-              <span className="text-slate-400">Realizado:</span>
+              <span className="text-slate-400">Realizado ERP:</span>
               <span className="text-sky-400 font-semibold">{formatBRL(summary.receita.realizadoBruto)}</span>
               <span className="text-slate-500">-</span>
               <span className="text-amber-400 font-semibold">{formatBRL(summary.custoObra.realizado)}</span>
@@ -465,13 +612,30 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                 <thead className="bg-slate-100 dark:bg-slate-900/90 text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold border-b border-slate-200 dark:border-slate-800">
                   <tr>
                     <th className="p-3 w-10"></th>
-                    <th className="p-3 min-w-[280px]">Grupo / Conta DRE (RESUMO ORÇAMENTO X REAL)</th>
-                    <th className="p-3 text-right">Orçado Total (R$)</th>
-                    <th className="p-3 text-right">Realizado (R$)</th>
-                    <th className="p-3 text-right">Variação (R$)</th>
-                    <th className="p-3 text-center min-w-[100px]">% Realizado</th>
-                    <th className="p-3 text-right">% s/ Receita Orç.</th>
-                    <th className="p-3 text-right">% s/ Receita Real.</th>
+                    <th className="p-3 min-w-[280px]">
+                      {comparisonMode === 'total'
+                        ? 'Grupo / Conta DRE (RESUMO ORÇAMENTO X REAL)'
+                        : 'Conta DRE / Etapa Vinculada na EAP'}
+                    </th>
+                    {comparisonMode === 'total' ? (
+                      <>
+                        <th className="p-3 text-right">Orçado Total (R$)</th>
+                        <th className="p-3 text-right">Realizado (R$)</th>
+                        <th className="p-3 text-right">Variação Saldo (R$)</th>
+                        <th className="p-3 text-center min-w-[100px]">% Realizado</th>
+                        <th className="p-3 text-right">% s/ Receita Orç.</th>
+                        <th className="p-3 text-right">% s/ Receita Real.</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="p-3 text-center min-w-[90px]">% Medido EAP</th>
+                        <th className="p-3 text-right min-w-[130px]">Orçado Medido (R$)</th>
+                        <th className="p-3 text-right min-w-[130px]">Realizado ERP (R$)</th>
+                        <th className="p-3 text-right min-w-[130px]">Desvio na Fase (R$)</th>
+                        <th className="p-3 text-center min-w-[110px]">% Desempenho</th>
+                        <th className="p-3 text-center min-w-[130px]">Diagnóstico</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
@@ -499,9 +663,14 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                     const pctSobreReceitaOrc = receitaTotalOrcada > 0 ? (line.orcado / receitaTotalOrcada) * 100 : 0;
                     const pctSobreReceitaReal = receitaTotalRealizada > 0 ? (line.realizado / receitaTotalRealizada) * 100 : 0;
 
-                    const isFavorable = line.name.includes('RECEITA')
+                    const isResultadoOrReceita = line.name.includes('RECEITA') || line.name.includes('RESULTADO');
+                    const isFavorable = isResultadoOrReceita
                       ? line.variacao >= 0
                       : line.variacao <= 0;
+
+                    const isFavorableMeasured = isResultadoOrReceita
+                      ? (line.variacaoMedido ?? 0) >= 0
+                      : (line.variacaoMedido ?? 0) <= 0;
 
                     // Estilos de linha
                     let rowStyle = 'hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors';
@@ -576,36 +745,95 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                             )}
                           </div>
                         </td>
-                        <td className="p-2.5 text-right font-mono">
-                          {formatBRL(line.orcado)}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-bold">
-                          {formatBRL(line.realizado)}
-                        </td>
-                        <td className={`p-2.5 text-right font-mono ${
-                          isTotal
-                            ? line.variacao >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'
-                            : isFavorable ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'
-                        }`}>
-                          {line.variacao > 0 ? `+${formatBRL(line.variacao)}` : formatBRL(line.variacao)}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            line.percentRealizado > 100
-                              ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400'
-                              : line.percentRealizado > 0
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-400'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}>
-                            {formatPercent(line.percentRealizado, 2)}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right font-mono text-slate-500 text-[10px]">
-                          {formatPercent(pctSobreReceitaOrc, 2)}
-                        </td>
-                        <td className="p-2.5 text-right font-mono text-slate-500 text-[10px]">
-                          {formatPercent(pctSobreReceitaReal, 2)}
-                        </td>
+
+                        {comparisonMode === 'total' ? (
+                          <>
+                            <td className="p-2.5 text-right font-mono">
+                              {formatBRL(line.orcado)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold">
+                              {formatBRL(line.realizado)}
+                            </td>
+                            <td className={`p-2.5 text-right font-mono ${
+                              isTotal
+                                ? line.variacao >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'
+                                : isFavorable ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'
+                            }`}>
+                              {line.variacao > 0 ? `+${formatBRL(line.variacao)}` : formatBRL(line.variacao)}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                line.percentRealizado > 100
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400'
+                                  : line.percentRealizado > 0
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-400'
+                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                              }`}>
+                                {formatPercent(line.percentRealizado, 2)}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-slate-500 text-[10px]">
+                              {formatPercent(pctSobreReceitaOrc, 2)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-slate-500 text-[10px]">
+                              {formatPercent(pctSobreReceitaReal, 2)}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            {/* % Medido na EAP */}
+                            <td className="p-2.5 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80">
+                                {formatPercent(line.measuredPercent ?? 0, 1)}
+                              </span>
+                            </td>
+
+                            {/* Orçado até a Medição */}
+                            <td className="p-2.5 text-right font-mono text-slate-700 dark:text-slate-300">
+                              {formatBRL(line.orcadoMedido ?? 0)}
+                            </td>
+
+                            {/* Realizado ERP */}
+                            <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                              {formatBRL(line.realizado)}
+                            </td>
+
+                            {/* Desvio de Custo na Fase */}
+                            <td className={`p-2.5 text-right font-mono font-bold ${
+                              isTotal
+                                ? (line.variacaoMedido ?? 0) >= 0 ? 'text-emerald-500' : 'text-amber-500'
+                                : isFavorableMeasured ? 'text-emerald-500' : 'text-rose-500'
+                            }`}>
+                              {(line.variacaoMedido ?? 0) > 0 ? `+${formatBRL(line.variacaoMedido ?? 0)}` : formatBRL(line.variacaoMedido ?? 0)}
+                            </td>
+
+                            {/* % Desempenho Medido */}
+                            <td className="p-2.5 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isFavorableMeasured
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400'
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-400'
+                              }`}>
+                                {formatPercent(line.percentDesempenhoMedido ?? 0, 1)}
+                              </span>
+                            </td>
+
+                            {/* Diagnóstico da Fase */}
+                            <td className="p-2.5 text-center text-[10px]">
+                              {isFavorableMeasured ? (
+                                <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Econômico</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center space-x-1 text-rose-500 font-semibold">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>Estouro na Fase</span>
+                                </span>
+                              )}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}

@@ -6,6 +6,7 @@ import {
   ATRIUM_DEPARA_RULES,
   isConstructionAccount,
 } from '../lib/atrium-dre-data';
+import { computeDynamicDre } from '../lib/dre-calculator';
 
 describe('Diferenciação: Acompanhamento do Orçamento da Obra vs Acompanhamento do Resultado da Obra (DRE)', () => {
   it('1. Deve segregar estritamente as 47 contas do Orçamento da Obra (Construção Civil)', () => {
@@ -154,5 +155,39 @@ describe('Diferenciação: Acompanhamento do Orçamento da Obra vs Acompanhament
     expect(dynamicResult.summary.receita.realizadoBruto).toBe(4950000);
     expect(dynamicResult.summary.custoObra.realizado).toBe(800000);
     expect(dynamicResult.summary.despesas.realizado).toBe(150000);
+  });
+
+  it('8. Deve calcular com precisão a Visão Orçado até a Medição Atual da EAP vs Realizado (Avanço Físico)', () => {
+    const dynamicResult = computeDynamicDre(
+      ATRIUM_DRE_LINES,
+      ATRIUM_DRE_SUMMARY,
+      [],
+      [],
+      [],
+      'work-1'
+    );
+
+    // Deve computar o avanço ponderado global da obra (46.22%)
+    expect(dynamicResult.globalProgressPercent).toBeCloseTo(46.22, 1);
+
+    // Contas de infraestrutura com 100% de avanço na EAP
+    const fundLine = dynamicResult.lines.find(l => l.name === 'FUNDAÇÕES');
+    expect(fundLine?.measuredPercent).toBe(100);
+    expect(fundLine?.orcadoMedido).toBe(fundLine?.orcado);
+
+    // Contas de superestrutura com 85.20% de avanço conforme medição analítica confrontar.xlsx
+    const concLine = dynamicResult.lines.find(l => l.name === 'ESTRUTURA DE CONCRETO');
+    expect(concLine?.measuredPercent).toBeCloseTo(85.20, 1);
+    expect(concLine?.orcadoMedido).toBeCloseTo((concLine?.orcado || 0) * 0.852, 0);
+
+    // Contas de acabamento com 0% de avanço na EAP (Pintura, Elevadores, etc.)
+    const pintLine = dynamicResult.lines.find(l => l.name === 'PINTURA (MAT+M.O.)');
+    expect(pintLine?.measuredPercent).toBe(0);
+    expect(pintLine?.orcadoMedido).toBe(0);
+
+    // Resumo medido dos cards
+    expect(dynamicResult.measuredSummary).toBeDefined();
+    expect(dynamicResult.measuredSummary.custoObra.orcadoMedido).toBeGreaterThan(0);
+    expect(dynamicResult.measuredSummary.custoObra.orcadoMedido).toBeLessThan(dynamicResult.summary.custoObra.orcado);
   });
 });

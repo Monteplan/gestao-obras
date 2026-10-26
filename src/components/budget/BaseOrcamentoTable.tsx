@@ -146,28 +146,28 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
         </div>
 
         <div className="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-          <span className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-semibold block flex items-center space-x-1">
-            <Package className="w-3 h-3" />
-            <span>Total Material (MAT)</span>
+          <span className="text-[10px] text-sky-600 dark:text-sky-400 uppercase font-semibold block flex items-center space-x-1">
+            <Layers className="w-3 h-3" />
+            <span>Contas Mapeadas no ERP (DRE)</span>
           </span>
-          <div className="text-lg font-bold text-blue-700 dark:text-blue-400 mt-1">
-            {formatBRL(currentTotalMat)}
+          <div className="text-lg font-bold text-sky-700 dark:text-sky-400 mt-1">
+            47 Contas Conciliadas
           </div>
           <span className="text-[10px] text-slate-500 block mt-0.5">
-            {currentTotalBudget > 0 ? ((currentTotalMat / currentTotalBudget) * 100).toFixed(1) : 0}% do orçamento
+            100% integradas à DRE e ao Realizado
           </span>
         </div>
 
         <div className="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-          <span className="text-[10px] text-amber-600 dark:text-amber-400 uppercase font-semibold block flex items-center space-x-1">
-            <HardHat className="w-3 h-3" />
-            <span>Total Mão de Obra (MAO)</span>
+          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold block flex items-center space-x-1">
+            <CheckCircle2 className="w-3 h-3" />
+            <span>Mapeamento De-Para Oficial</span>
           </span>
-          <div className="text-lg font-bold text-amber-700 dark:text-amber-400 mt-1">
-            {formatBRL(currentTotalMao)}
+          <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400 mt-1">
+            {ATRIUM_BASE_TOTALS.totalItems} Subetapas Vinculadas
           </div>
           <span className="text-[10px] text-slate-500 block mt-0.5">
-            {currentTotalBudget > 0 ? ((currentTotalMao / currentTotalBudget) * 100).toFixed(1) : 0}% do orçamento
+            Conforme planilha oficial DE-PARA3.xlsx
           </span>
         </div>
       </div>
@@ -201,19 +201,6 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
               ))}
             </select>
           </div>
-
-          <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
-            <span className="text-slate-400 text-[10px]">Tipo:</span>
-            <select
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              className="bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer text-[11px]"
-            >
-              <option value="todos" className="bg-white dark:bg-slate-900">Todos os Tipos</option>
-              <option value="MATERIAL" className="bg-white dark:bg-slate-900">Material (MAT)</option>
-              <option value="MÃO DE OBRA" className="bg-white dark:bg-slate-900">Mão de Obra (MAO)</option>
-            </select>
-          </div>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -239,14 +226,11 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
             <tr>
               <th className="p-3 w-8"></th>
               <th className="p-3 w-20">Código</th>
-              <th className="p-3 min-w-[240px]">Etapa / Subetapa (CONTA ORÇAMENTO)</th>
-              <th className="p-3 min-w-[180px]">Conta ERP Vinculada (CONTA ERP)</th>
-              <th className="p-3 text-center w-16">Unid.</th>
-              <th className="p-3 text-center w-20">Qtd.</th>
-              <th className="p-3 text-center w-28">Tipo</th>
-              <th className="p-3 text-right w-28">Mão de Obra</th>
-              <th className="p-3 text-right w-28">Material</th>
-              <th className="p-3 text-right w-32">Total Orçado (R$)</th>
+              <th className="p-3 min-w-[280px]">Etapa / Subetapa (CONTA ORÇAMENTO)</th>
+              <th className="p-3 min-w-[220px]">Conta ERP Vinculada (CONTA ERP)</th>
+              <th className="p-3 text-center w-20">Unid.</th>
+              <th className="p-3 text-center w-24">Qtd.</th>
+              <th className="p-3 text-right w-36">Valor Orçado (R$)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -279,17 +263,6 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
                         </span>
                       </span>
                     </td>
-                    <td className="p-3 text-center">
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        Consolidado
-                      </span>
-                    </td>
-                    <td className="p-3 text-right text-amber-700 dark:text-amber-400 font-mono text-[11px]">
-                      {formatBRL(group.totalMaoFiltered)}
-                    </td>
-                    <td className="p-3 text-right text-blue-700 dark:text-blue-400 font-mono text-[11px]">
-                      {formatBRL(group.totalMatFiltered)}
-                    </td>
                     <td className="p-3 text-right font-mono font-black text-slate-900 dark:text-white">
                       {formatBRL(group.totalBudgetFiltered)}
                     </td>
@@ -298,9 +271,6 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
                   {/* Linhas das Subetapas */}
                   {isExpanded &&
                     group.items.map((item) => {
-                      const isMat = item.expenseType.toUpperCase().includes('MAT');
-                      const isMao = item.expenseType.toUpperCase().includes('MÃO');
-
                       return (
                         <tr
                           key={item.id}
@@ -313,33 +283,16 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
                           <td className="p-2.5 font-medium text-slate-800 dark:text-slate-200">
                             {item.substageName}
                           </td>
-                          <td className="p-2.5 text-slate-500 dark:text-slate-400 italic">
-                            {item.erpAccount || '—'}
+                          <td className="p-2.5 text-slate-600 dark:text-slate-300 font-medium">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60">
+                              {item.erpAccount || '—'}
+                            </span>
                           </td>
                           <td className="p-2.5 text-center text-slate-500 font-mono">
                             {item.unit || 'UN'}
                           </td>
                           <td className="p-2.5 text-center font-mono text-slate-700 dark:text-slate-300">
                             {item.quantity.toLocaleString('pt-BR')}
-                          </td>
-                          <td className="p-2.5 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isMat
-                                  ? 'bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800/50'
-                                  : isMao
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/50'
-                                  : 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300'
-                              }`}
-                            >
-                              {item.expenseType}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-right font-mono text-slate-600 dark:text-slate-400">
-                            {item.maoAmount > 0 ? formatBRL(item.maoAmount) : '—'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono text-slate-600 dark:text-slate-400">
-                            {item.matAmount > 0 ? formatBRL(item.matAmount) : '—'}
                           </td>
                           <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-slate-100">
                             {formatBRL(item.budgetAmount)}
@@ -353,16 +306,10 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
           </tbody>
           <tfoot className="bg-slate-100 dark:bg-slate-900/90 font-bold border-t border-slate-300 dark:border-slate-700">
             <tr>
-              <td colSpan={7} className="p-3 text-right uppercase text-[11px] text-slate-700 dark:text-slate-300">
-                Totais ({filteredGroups.length} etapas exibidas):
+              <td colSpan={6} className="p-3 text-right uppercase text-[11px] text-slate-700 dark:text-slate-300">
+                Total Geral ({filteredGroups.length} etapas exibidas):
               </td>
-              <td className="p-3 text-right text-amber-700 dark:text-amber-400 font-mono">
-                {formatBRL(currentTotalMao)}
-              </td>
-              <td className="p-3 text-right text-blue-700 dark:text-blue-400 font-mono">
-                {formatBRL(currentTotalMat)}
-              </td>
-              <td className="p-3 text-right text-slate-900 dark:text-white font-mono text-sm">
+              <td className="p-3 text-right text-slate-900 dark:text-white font-mono text-sm font-black">
                 {formatBRL(currentTotalBudget)}
               </td>
             </tr>

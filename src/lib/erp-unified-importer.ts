@@ -84,7 +84,14 @@ export function sanitizeRowData(row: Record<string, any>, rowIdx: number): {
   const conta = String(row['NM_CTA_CST'] || row['conta'] || row['categoria'] || '').trim();
   let naturezaCodigo = String(row['CD_ABG'] || row['natureza'] || '').trim();
 
-  let valor = sanitizeCurrencyValue(row['VL_LNC_CST'] || row['valor'] || row['net_value']);
+  const rawValor =
+    row['VL_LNC_CST'] ??
+    row[' VL_LNC_CST '] ??
+    row['VL_LNC'] ??
+    row['valor'] ??
+    row['net_value'] ??
+    Object.entries(row).find(([k]) => k.trim() === 'VL_LNC_CST')?.[1];
+  let valor = sanitizeCurrencyValue(rawValor);
 
   // Anomalia detectada em relatórios ERP (ex: linha onde "PAGTO TRIB DIVERSOS" deslocou as colunas)
   if (naturezaCodigo === 'PAGTO TRIB DIVERSOS') {

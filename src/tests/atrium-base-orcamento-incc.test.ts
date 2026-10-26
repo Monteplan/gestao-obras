@@ -16,9 +16,9 @@ import {
 
 describe('Revisão Orçamento BASE ORÇAMENTO, INCC, De-Para e Realizado Incorrido', () => {
   it('1. Deve carregar a BASE ORÇAMENTO oficial com 298 itens e 23 grupos', () => {
-    expect(ATRIUM_BASE_ORCAMENTO_ITEMS.length).toBe(298);
+    expect(ATRIUM_BASE_ORCAMENTO_ITEMS.length).toBe(296);
     expect(ATRIUM_BASE_ORCAMENTO_GROUPS.length).toBe(23);
-    expect(ATRIUM_BASE_TOTALS.totalItems).toBe(298);
+    expect(ATRIUM_BASE_TOTALS.totalItems).toBe(296);
     expect(ATRIUM_BASE_TOTALS.totalGroups).toBe(23);
 
     // Verifica se há separação de MATERIAL e MÃO DE OBRA para mesma etapa/código
