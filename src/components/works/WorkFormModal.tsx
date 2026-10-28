@@ -3,6 +3,7 @@ import { Work, WorkStatus, UserProfile } from '../../types';
 import { X, Building2, MapPin, UserCheck } from 'lucide-react';
 import { BRAZILIAN_STATES } from '../../lib/utils';
 import { INITIAL_PROFILES } from '../../lib/seed-data';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface WorkFormModalProps {
   isOpen: boolean;
@@ -17,11 +18,22 @@ export const WorkFormModal: React.FC<WorkFormModalProps> = ({
   onSave,
   initialWork,
 }) => {
+  const { user } = useAuth();
+
   // Carrega a lista oficial de usuários cadastrados no sistema
   const [userProfiles] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem('gestao_obras_v2_user_profiles');
-      if (saved) return JSON.parse(saved);
+      let list: UserProfile[] = saved ? JSON.parse(saved) : [...INITIAL_PROFILES];
+      INITIAL_PROFILES.forEach((init) => {
+        if (!list.some((p) => p.email.toLowerCase() === init.email.toLowerCase())) {
+          list.push(init);
+        }
+      });
+      if (user && user.email && !list.some((p) => p.email.toLowerCase() === user.email.toLowerCase())) {
+        list = [user, ...list];
+      }
+      return list;
     } catch (e) {
       console.warn('Erro ao carregar perfis de usuários:', e);
     }

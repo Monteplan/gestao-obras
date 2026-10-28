@@ -25,6 +25,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Sincroniza e garante persistência do perfil do usuário ativo
+  const persistUserProfile = (profile: UserProfile) => {
+    try {
+      const raw = localStorage.getItem('gestao_obras_v2_user_profiles');
+      let list: UserProfile[] = raw ? JSON.parse(raw) : [...INITIAL_PROFILES];
+      const existingIndex = list.findIndex(p => p.email.toLowerCase() === profile.email.toLowerCase());
+      if (existingIndex >= 0) {
+        list[existingIndex] = { ...list[existingIndex], ...profile };
+      } else {
+        list = [profile, ...list];
+      }
+      localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(list));
+    } catch (err) {
+      console.warn('Erro ao persistir perfil de usuário no localStorage:', err);
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      Promise.resolve(
+        supabase.from('profiles').upsert({
+          name: profile.name,
+          email: profile.email.toLowerCase(),
+          role: profile.role,
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          created_at: new Date().toISOString()
+        })
+      )
+        .then(() => {})
+        .catch(() => {});
+    }
+  };
+
   // Sempre exige autenticação na tela de login ao entrar na aplicação
   useEffect(() => {
     // Remove qualquer login permanente anterior do localStorage
@@ -34,7 +65,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const sessionUser = sessionStorage.getItem('gestao_obras_session_user');
     if (sessionUser) {
       try {
-        setUser(JSON.parse(sessionUser));
+        const parsed = JSON.parse(sessionUser);
+        setUser(parsed);
+        persistUserProfile(parsed);
       } catch {
         setUser(null);
       }
@@ -61,6 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           setUser(profile);
           sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(profile));
+          persistUserProfile(profile);
           return { success: true };
         }
       } catch (err: any) {
@@ -77,6 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (customMatch) {
           setUser(customMatch);
           sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(customMatch));
+          persistUserProfile(customMatch);
           return { success: true };
         }
       }
@@ -89,6 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (found) {
       setUser(found);
       sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(found));
+      persistUserProfile(found);
       return { success: true };
     }
 
@@ -110,6 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setUser(corporateUser);
       sessionStorage.setItem('gestao_obras_session_user', JSON.stringify(corporateUser));
+      persistUserProfile(corporateUser);
       return { success: true };
     }
 

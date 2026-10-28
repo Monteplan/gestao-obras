@@ -23,6 +23,14 @@ import {
 
 export const INITIAL_PROFILES: UserProfile[] = [
   {
+    id: 'user-tiago',
+    email: 'tiago.caetano@monteplanengenharia.com.br',
+    name: 'Tiago Caetano',
+    role: 'admin',
+    organization_id: 'org-1',
+    organization_name: 'Monteplan Engenharia',
+  },
+  {
     id: 'user-1',
     email: 'admin@monteplan.com.br',
     name: 'Carlos Mendes',

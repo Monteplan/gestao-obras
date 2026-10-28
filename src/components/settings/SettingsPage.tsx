@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -50,12 +50,89 @@ export const SettingsPage: React.FC = () => {
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem('gestao_obras_v2_user_profiles');
-      if (saved) return JSON.parse(saved);
+      let list: UserProfile[] = saved ? JSON.parse(saved) : [...INITIAL_PROFILES];
+      // Garante que todos os perfis padrão existam
+      INITIAL_PROFILES.forEach((init) => {
+        if (!list.some((p) => p.email.toLowerCase() === init.email.toLowerCase())) {
+          list.push(init);
+        }
+      });
+      // Garante que o usuário logado atualmente esteja na lista
+      if (user && user.email && !list.some((p) => p.email.toLowerCase() === user.email.toLowerCase())) {
+        list = [user, ...list];
+      }
+      return list;
     } catch (e) {
       console.warn('Erro ao carregar perfis de usuários:', e);
     }
     return INITIAL_PROFILES;
   });
+
+  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
+
+  // Sincronização em tempo real com o Supabase (public.profiles) e com a sessão ativa
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncWithSupabaseAndSession = async () => {
+      let merged = [...userProfiles];
+
+      // 1. Inclui o usuário atualmente autenticado se ainda não constar
+      if (user && user.email) {
+        const foundIdx = merged.findIndex((p) => p.email.toLowerCase() === user.email.toLowerCase());
+        if (foundIdx === -1) {
+          merged = [user, ...merged];
+        } else {
+          merged[foundIdx] = { ...merged[foundIdx], ...user };
+        }
+      }
+
+      // 2. Consulta tabela public.profiles no Supabase
+      if (isSupabaseConfigured() && supabase) {
+        setIsLoadingUsers(true);
+        try {
+          const { data, error } = await supabase.from('profiles').select('*');
+          if (!error && data && data.length > 0) {
+            data.forEach((dbUser: any) => {
+              const mapped: UserProfile = {
+                id: dbUser.id || 'usr-' + Date.now(),
+                name: dbUser.name || dbUser.full_name || dbUser.email?.split('@')[0],
+                email: dbUser.email,
+                role: (dbUser.role as UserRole) || 'engenharia',
+                organization_id: dbUser.organization_id || 'org-1',
+                organization_name: 'Monteplan Engenharia',
+              };
+              const existingIdx = merged.findIndex((p) => p.email.toLowerCase() === mapped.email.toLowerCase());
+              if (existingIdx >= 0) {
+                merged[existingIdx] = { ...merged[existingIdx], ...mapped };
+              } else {
+                merged.push(mapped);
+              }
+            });
+          }
+        } catch (err) {
+          console.warn('Aviso ao consultar public.profiles no Supabase:', err);
+        } finally {
+          if (isMounted) setIsLoadingUsers(false);
+        }
+      }
+
+      if (isMounted) {
+        setUserProfiles(merged);
+        try {
+          localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(merged));
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+
+    syncWithSupabaseAndSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
@@ -109,11 +186,10 @@ export const SettingsPage: React.FC = () => {
     if (isSupabaseConfigured() && supabase) {
       Promise.resolve(
         supabase.from('profiles').upsert({
-          id: newUser.id,
-          email: newUser.email,
-          full_name: newUser.name,
+          name: newUser.name,
+          email: newUser.email.toLowerCase(),
           role: newUser.role,
-          organization_id: newUser.organization_id,
+          organization_id: '11111111-1111-1111-1111-111111111111',
           created_at: new Date().toISOString()
         })
       )
@@ -131,11 +207,19 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleDeleteUser = (userId: string, userName: string) => {
+    const targetUser = userProfiles.find(u => u.id === userId);
     if (confirm(`Deseja realmente remover o usuário "${userName}" do sistema?`)) {
       const updated = userProfiles.filter(u => u.id !== userId);
       setUserProfiles(updated);
       localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(updated));
       logAudit('DELETE_USER', 'users', userId, `Usuário removido: ${userName}`);
+
+      if (isSupabaseConfigured() && supabase && targetUser) {
+        Promise.resolve(
+          supabase.from('profiles').delete().eq('email', targetUser.email.toLowerCase())
+        ).catch(console.warn);
+      }
+
       setUserSuccessMessage(`Usuário "${userName}" removido com sucesso.`);
       setTimeout(() => setUserSuccessMessage(null), 3000);
     }
