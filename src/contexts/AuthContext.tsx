@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../types';
 import { INITIAL_PROFILES } from '../lib/seed-data';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { syncRolePermissionsToLocal } from '../lib/role-permissions';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -17,6 +18,7 @@ interface AuthContextType {
   recoverPasswordStep3: (newPass: string) => Promise<{ success: boolean; error?: string }>;
   canAccess: (module: string) => boolean;
   canEdit: (module: string) => boolean;
+  refreshPermissions: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,6 +26,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  // Versão das permissões: força re-render (ex.: menu lateral) quando a matriz muda
+  const [, setPermissionsVersion] = useState<number>(0);
+  const refreshPermissions = () => setPermissionsVersion(v => v + 1);
+
+  // Ao autenticar, carrega a matriz de permissões compartilhada do Supabase
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    syncRolePermissionsToLocal().then((updated) => {
+      if (active && updated) refreshPermissions();
+    });
+    return () => { active = false; };
+  }, [user?.email]);
 
   // Sincroniza e garante persistência do perfil do usuário ativo
   const persistUserProfile = (profile: UserProfile) => {
@@ -204,10 +219,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const role = user?.role || 'consulta';
 
-  // Matriz de Controle de Acesso por Perfil (RBAC)
+  // Carrega permissões customizadas do gerenciador de perfis (se existirem)
+  const getCustomPermissions = (): Record<string, string> | null => {
+    try {
+      const saved = localStorage.getItem('gestao_obras_v2_role_permissions');
+      if (saved) {
+        const all = JSON.parse(saved);
+        return all[role] || null;
+      }
+    } catch { /* fallback */ }
+    return null;
+  };
+
+  // Matriz de Controle de Acesso por Perfil (RBAC) — lê permissões customizadas quando disponíveis
   const canAccess = (module: string): boolean => {
     if (role === 'admin') return true;
 
+    const custom = getCustomPermissions();
+    if (custom && custom[module] !== undefined) {
+      return custom[module] !== 'none';
+    }
+
+    // Fallback para permissões padrão hardcoded
     switch (module) {
       case 'dashboard':
       case 'works':
@@ -244,6 +277,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (role === 'admin') return true;
     if (role === 'consulta') return false;
 
+    const custom = getCustomPermissions();
+    if (custom && custom[module] !== undefined) {
+      return custom[module] === 'full';
+    }
+
+    // Fallback para permissões padrão hardcoded
     switch (module) {
       case 'works':
       case 'stages':
@@ -287,6 +326,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         recoverPasswordStep3,
         canAccess,
         canEdit,
+        refreshPermissions,
       }}
     >
       {children}

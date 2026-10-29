@@ -33,6 +33,7 @@ import {
 import { UserRole, UserProfile } from '../../types';
 import { supabase, logAudit } from '../../lib/supabase';
 import { DeParaMatrixSettings } from './DeParaMatrixSettings';
+import { RolePermissionsManager } from './RolePermissionsManager';
 
 export const SettingsPage: React.FC = () => {
   const { user, role } = useAuth();
@@ -40,7 +41,7 @@ export const SettingsPage: React.FC = () => {
   const { theme, toggleTheme, setTheme } = useTheme();
   const { device, simulatedDevice, setSimulatedDevice, isMobileView } = useDevice();
 
-  const [activeTab, setActiveTab] = useState<'geral' | 'matriz_depara' | 'usuarios' | 'auditoria'>('geral');
+  const [activeTab, setActiveTab] = useState<'geral' | 'matriz_depara' | 'usuarios' | 'perfis_permissoes' | 'auditoria'>('geral');
   const [budgetAlertThreshold, setBudgetAlertThreshold] = useState<number>(85);
   const [marginAlertThreshold, setMarginAlertThreshold] = useState<number>(8);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -280,6 +281,15 @@ export const SettingsPage: React.FC = () => {
             }`}
           >
             Usuários & Perfis
+          </button>
+          <button
+            onClick={() => setActiveTab('perfis_permissoes')}
+            className={`px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 ${
+              activeTab === 'perfis_permissoes' ? 'bg-[#004171] text-white shadow-md shadow-[#004171]/30' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Perfis & Permissões</span>
           </button>
           <button
             onClick={() => setActiveTab('auditoria')}
@@ -874,6 +884,11 @@ export const SettingsPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ABA: PERFIS & PERMISSÕES (RBAC) */}
+      {activeTab === 'perfis_permissoes' && (
+        <RolePermissionsManager />
       )}
 
       {/* ABA 3: TRILHA DE AUDITORIA */}
