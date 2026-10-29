@@ -186,13 +186,16 @@ export const SettingsPage: React.FC = () => {
     // Integração não-bloqueante com Supabase se configurado
     if (isSupabaseConfigured() && supabase) {
       Promise.resolve(
-        supabase.from('profiles').upsert({
-          name: newUser.name,
-          email: newUser.email.toLowerCase(),
-          role: newUser.role,
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          created_at: new Date().toISOString()
-        })
+        supabase.from('profiles').upsert(
+          {
+            name: newUser.name,
+            email: newUser.email.toLowerCase(),
+            role: newUser.role,
+            organization_id: '11111111-1111-1111-1111-111111111111',
+            created_at: new Date().toISOString()
+          },
+          { onConflict: 'email' }
+        )
       )
         .then(() => {})
         .catch(console.warn);
@@ -205,6 +208,32 @@ export const SettingsPage: React.FC = () => {
     setNewUserPassword('');
     setUserSuccessMessage(`Usuário "${newUser.name}" incluído com sucesso!`);
     setTimeout(() => setUserSuccessMessage(null), 4000);
+  };
+
+  const handleChangeUserRole = (targetUser: UserProfile, updatedRole: UserRole) => {
+    const updatedList = userProfiles.map(u =>
+      u.email.toLowerCase() === targetUser.email.toLowerCase() ? { ...u, role: updatedRole } : u
+    );
+    setUserProfiles(updatedList);
+    localStorage.setItem('gestao_obras_v2_user_profiles', JSON.stringify(updatedList));
+    logAudit('UPDATE_USER_ROLE', 'profiles', targetUser.id, `Perfil de ${targetUser.name} (${targetUser.email}) alterado para ${updatedRole}`);
+
+    if (isSupabaseConfigured() && supabase) {
+      Promise.resolve(
+        supabase.from('profiles').upsert(
+          {
+            name: targetUser.name,
+            email: targetUser.email.toLowerCase(),
+            role: updatedRole,
+            organization_id: '11111111-1111-1111-1111-111111111111',
+          },
+          { onConflict: 'email' }
+        )
+      ).catch(console.warn);
+    }
+
+    setUserSuccessMessage(`Perfil de "${targetUser.name}" atualizado para ${getRoleBadge(updatedRole).label}.`);
+    setTimeout(() => setUserSuccessMessage(null), 3000);
   };
 
   const handleDeleteUser = (userId: string, userName: string) => {
@@ -699,9 +728,24 @@ export const SettingsPage: React.FC = () => {
                       </td>
                       <td className="p-3.5 text-slate-300 font-mono text-xs">{p.email}</td>
                       <td className="p-3.5">
-                        <span className={`px-2.5 py-1 rounded-md font-bold uppercase text-[10px] inline-flex items-center space-x-1 ${badge.color}`}>
-                          <span>{badge.label}</span>
-                        </span>
+                        {role === 'admin' && !isCurrentLogged ? (
+                          <select
+                            value={p.role}
+                            onChange={(e) => handleChangeUserRole(p, e.target.value as UserRole)}
+                            className={`px-2.5 py-1 rounded-md font-bold uppercase text-[10px] cursor-pointer bg-slate-900 ${badge.color}`}
+                          >
+                            <option value="admin" className="bg-slate-900 text-white">Admin Geral</option>
+                            <option value="gestor" className="bg-slate-900 text-white">Gestor de Obras</option>
+                            <option value="engenharia" className="bg-slate-900 text-white">Engenheiro de Campo</option>
+                            <option value="compras" className="bg-slate-900 text-white">Compras & Suprimentos</option>
+                            <option value="financeiro" className="bg-slate-900 text-white">Financeiro & Controladoria</option>
+                            <option value="consulta" className="bg-slate-900 text-white">Somente Leitura</option>
+                          </select>
+                        ) : (
+                          <span className={`px-2.5 py-1 rounded-md font-bold uppercase text-[10px] inline-flex items-center space-x-1 ${badge.color}`}>
+                            <span>{badge.label}</span>
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5 text-slate-400">{p.organization_name || 'Monteplan Engenharia'}</td>
                       <td className="p-3.5 text-center">
