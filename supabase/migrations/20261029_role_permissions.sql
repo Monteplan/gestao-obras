@@ -38,3 +38,4 @@ INSERT INTO public.role_permissions (role, permissions, updated_by) VALUES
 ('financeiro', '{"dashboard":"view","works":"view","physical":"none","stages":"none","budget":"full","commercial":"view","financial":"full","purchasing":"view","labor":"none","importer":"full","depara":"full","reports":"full","settings":"none"}', 'seed'),
 ('consulta',   '{"dashboard":"view","works":"view","physical":"view","stages":"view","budget":"view","commercial":"view","financial":"view","purchasing":"none","labor":"none","importer":"none","depara":"none","reports":"view","settings":"none"}', 'seed')
 ON CONFLICT (role) DO NOTHING;
+

@@ -41,3 +41,4 @@ export async function syncRolePermissionsToLocal(): Promise<boolean> {
     return false;
   }
 }
+

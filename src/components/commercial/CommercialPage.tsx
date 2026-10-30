@@ -1,49 +1,64 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ATRIUM_COMMERCIAL_UNITS,
   calculateCommercialSummary,
   CommercialUnit,
   CommercialUnitStatus,
+  COMMERCIAL_UNITS_STORAGE_KEY,
+  fetchCommercialDataFromSupabase,
 } from '../../lib/atrium-commercial-data';
-import { formatBRL, formatPercent } from '../../lib/utils';
+import { formatBRL, formatPercent, formatDateBR } from '../../lib/utils';
+import { CommercialImportModal } from './CommercialImportModal';
 import {
   Building2,
   Home,
   CheckCircle2,
-  DollarSign,
   Ruler,
   Lock,
   Search,
   Filter,
   Download,
-  Eye,
+  Upload,
   Layers,
   TrendingUp,
   CreditCard,
-  Calendar,
-  AlertCircle,
-  Clock,
   Sparkles,
-  ArrowUpRight,
-  ShieldAlert,
 } from 'lucide-react';
 
 export const CommercialPage: React.FC = () => {
-
-  // Estado das unidades (carregado com dados padrão e permitindo edição se desejado)
+  // Estado das unidades (carregado com dados reais de vendasgeral.xlsx)
   const [units, setUnits] = useState<CommercialUnit[]>(() => {
     try {
-      const saved = localStorage.getItem('atrium_custom_commercial_units');
+      localStorage.removeItem('atrium_custom_commercial_units');
+      localStorage.removeItem('atrium_real_commercial_units_v2');
+      const saved = localStorage.getItem(COMMERCIAL_UNITS_STORAGE_KEY);
       if (saved) return JSON.parse(saved);
     } catch {}
     return ATRIUM_COMMERCIAL_UNITS;
   });
 
+  const [showImportModal, setShowImportModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | CommercialUnitStatus>('todos');
   const [typologyFilter, setTypologyFilter] = useState<string>('todos');
   const [viewMode, setViewMode] = useState<'table' | 'tower'>('table');
   const [selectedUnit, setSelectedUnit] = useState<CommercialUnit | null>(null);
+
+  // Sincroniza automaticamente com a tabela commercial_units do Supabase
+  useEffect(() => {
+    let active = true;
+    fetchCommercialDataFromSupabase().then((remoteUnits) => {
+      if (active && remoteUnits && remoteUnits.length > 0) {
+        setUnits(remoteUnits);
+        try {
+          localStorage.setItem(COMMERCIAL_UNITS_STORAGE_KEY, JSON.stringify(remoteUnits));
+        } catch {}
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Cálculos consolidados
   const summary = useMemo(() => calculateCommercialSummary(units), [units]);
@@ -58,46 +73,56 @@ export const CommercialPage: React.FC = () => {
       const q = searchTerm.toLowerCase();
       return (
         u.unitNumber.toLowerCase().includes(q) ||
+        u.unitLabel.toLowerCase().includes(q) ||
         (u.buyerName && u.buyerName.toLowerCase().includes(q)) ||
         (u.contractNumber && u.contractNumber.toLowerCase().includes(q)) ||
         (u.blockedReason && u.blockedReason.toLowerCase().includes(q)) ||
+        u.erpStatus.toLowerCase().includes(q) ||
         u.typology.toLowerCase().includes(q)
       );
     });
   }, [units, statusFilter, typologyFilter, searchTerm]);
 
-  // Exportar para CSV
+  // Exportar para CSV (espelhando todas as colunas de vendasgeral.xlsx)
   const handleExportCSV = () => {
     const headers = [
       'Unidade',
+      'Identificacao ERP (DE_UNI)',
       'Andar',
       'Tipologia',
       'Area Privativa (m2)',
+      'Status (DE_STA)',
+      'Contrato (CD_CNT)',
+      'Data Contrato (DT_CNT)',
+      'Valor Contrato / Tabela (R$)',
       'Preco / m2',
-      'Valor Total (R$)',
-      'Status',
-      'Comprador',
-      'Contrato',
-      'Data Contrato',
-      'Valor Recebido (R$)',
-      'Valor a Receber (R$)',
-      'Motivo Bloqueio',
+      'Cliente / Destinacao (RZ_SCL)',
+      'Reajuste (DE_FRM_REA)',
+      'Indice Construcao (NM_IND_REA_CNS)',
+      'Indice Habite-se (NM_IND_REA_HAB)',
+      'Juros Habite-se (%)',
+      'Valor Pago (R$)',
+      'Saldo (R$)',
     ];
 
     const rows = filteredUnits.map((u) => [
       u.unitNumber,
+      `"${u.unitLabel}"`,
       u.floor,
       `"${u.typology}"`,
       u.privateAreaM2.toFixed(2),
-      u.priceM2.toFixed(2),
-      u.unitValue.toFixed(2),
-      u.status.toUpperCase(),
-      `"${u.buyerName || '-'}"`,
+      u.erpStatus,
       `"${u.contractNumber || '-'}"`,
       `"${u.contractDate || '-'}"`,
+      u.unitValue.toFixed(2),
+      u.priceM2.toFixed(2),
+      `"${u.buyerName || '-'}"`,
+      `"${u.readjustmentFrequency || '-'}"`,
+      `"${u.constructionIndex || '-'}"`,
+      `"${u.postDeliveryIndex || '-'}"`,
+      (u.postDeliveryInterest || 0).toFixed(2),
       u.paidValue.toFixed(2),
       u.receivableValue.toFixed(2),
-      `"${u.blockedReason || '-'}"`,
     ]);
 
     const csvContent =
@@ -109,7 +134,7 @@ export const CommercialPage: React.FC = () => {
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `relatorio_comercial_atrium_${new Date().toISOString().slice(0, 10)}.csv`
+      `relatorio_vendasgeral_atrium_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -128,13 +153,17 @@ export const CommercialPage: React.FC = () => {
           <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
             Gestão Comercial, Vendas Incorridas & Carteira de Recebíveis
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-3xl">
-            Acompanhamento em tempo real das <strong>80 unidades</strong> do empreendimento: vendas incorridas,
-            fluxo de valores recebidos versus a receber, estoque disponível e unidades bloqueadas.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#004171] hover:bg-[#0a548c] text-white flex items-center space-x-1.5 transition-all shadow-md"
+          >
+            <Upload className="w-3.5 h-3.5 text-[#38bdf8]" />
+            <span>Importar Relatório de Vendas (.xlsx)</span>
+          </button>
+
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center space-x-1.5 transition-all shadow-sm"
@@ -145,7 +174,7 @@ export const CommercialPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 4 CARDS PRINCIPAIS EXIGIDOS */}
+      {/* 4 CARDS PRINCIPAIS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: VGV Real (Vendido até o momento + Unidades em Estoque) */}
         <div className="glass-card p-5 rounded-3xl border border-slate-200 dark:border-slate-800 relative overflow-hidden bg-gradient-to-br from-blue-500/10 to-transparent space-y-3">
@@ -170,11 +199,11 @@ export const CommercialPage: React.FC = () => {
 
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500">Vendido até o Momento (64 un.):</span>
+              <span className="text-slate-500">Vendido ({summary.soldUnits} un.):</span>
               <strong className="text-blue-600 dark:text-blue-400 font-mono">{formatBRL(summary.vgvVendido)}</strong>
             </div>
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500">Unidades em Estoque (16 un.):</span>
+              <span className="text-slate-500">Em Estoque ({summary.stockUnits} un.):</span>
               <strong className="text-slate-700 dark:text-slate-300 font-mono">{formatBRL(summary.vgvEstoqueTotal)}</strong>
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60">
@@ -192,7 +221,7 @@ export const CommercialPage: React.FC = () => {
               <span>2. Vendas Incorridas Real</span>
             </span>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-              {formatPercent(summary.salesPercent, 0)} Vendido
+              {formatPercent(summary.salesPercent, 1)} Vendido
             </span>
           </div>
 
@@ -252,12 +281,12 @@ export const CommercialPage: React.FC = () => {
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-slate-500">Cálculo Efetivo:</span>
               <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300">
-                R$ 44,16M ÷ {summary.soldPrivateAreaM2.toLocaleString('pt-BR')} m²
+                {formatBRL(summary.vgvVendido)} ÷ {summary.soldPrivateAreaM2.toLocaleString('pt-BR')} m²
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500">Tabela de Viabilidade:</span>
-              <strong className="text-slate-800 dark:text-slate-200 font-mono">{formatBRL(11406.20)} /m²</strong>
+              <span className="text-slate-500">Média Geral (VGV Real):</span>
+              <strong className="text-slate-800 dark:text-slate-200 font-mono">{formatBRL(summary.averagePriceM2Geral)} /m²</strong>
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60">
               <span>Área Privativa Total:</span>
@@ -274,7 +303,7 @@ export const CommercialPage: React.FC = () => {
               <span>4. Fluxo de Vendas</span>
             </span>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-              Recebido vs A Receber
+              ValorPago vs SALDO
             </span>
           </div>
 
@@ -283,13 +312,13 @@ export const CommercialPage: React.FC = () => {
               {formatBRL(summary.totalReceived)}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Recebido até o Momento <strong className="text-emerald-600 dark:text-emerald-400">(DRE Oficial)</strong>
+              Valor Pago Acumulado <strong className="text-emerald-600 dark:text-emerald-400">(Relatório ERP)</strong>
             </div>
           </div>
 
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500">Valores a Receber (Saldo):</span>
+              <span className="text-slate-500">Saldo a Receber (Vendidas):</span>
               <strong className="text-amber-600 dark:text-amber-400 font-mono">
                 {formatBRL(summary.totalReceivable)}
               </strong>
@@ -297,27 +326,27 @@ export const CommercialPage: React.FC = () => {
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div
                 className="h-full bg-emerald-500 rounded-full"
-                style={{ width: `${(summary.totalReceived / summary.vgvVendido) * 100}%` }}
+                style={{ width: `${Math.min(100, (summary.totalReceived / (summary.vgvVendido || 1)) * 100)}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
-              <span>% Recebido das Vendas:</span>
+              <span>% Recebido s/ Vendas:</span>
               <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                {formatPercent((summary.totalReceived / summary.vgvVendido) * 100, 2)}
+                {formatPercent((summary.totalReceived / (summary.vgvVendido || 1)) * 100, 2)}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* CARDS RESUMO DO ESTOQUE (DISPONÍVEIS & BLOQUEADAS) */}
+      {/* CARDS RESUMO DO ESTOQUE (VENDIDAS, LIVRES E CONTRATADAS/RESERVADAS) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Unidades Vendidas */}
         <div className="glass-card p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/30 dark:bg-emerald-950/20 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              <span>Unidades Vendidas (80%)</span>
+              <span>Unidades Vendidas ({formatPercent(summary.salesPercent, 1)})</span>
             </span>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
               {summary.soldUnits} <span className="text-xs font-normal text-slate-500">unidades</span>
@@ -334,18 +363,18 @@ export const CommercialPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Unidades Disponíveis para Venda */}
+        {/* Unidades Livres */}
         <div className="glass-card p-4 rounded-2xl border border-sky-200 dark:border-sky-800/50 bg-sky-50/30 dark:bg-sky-950/20 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[11px] font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-sky-500" />
-              <span>Unidades Disponíveis para Venda</span>
+              <span>Unidades Livres para Venda</span>
             </span>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
               {summary.availableUnits} <span className="text-xs font-normal text-slate-500">unidades em estoque</span>
             </div>
             <div className="text-xs text-slate-500">
-              Valor Disponível: <strong className="text-sky-600 dark:text-sky-400 font-mono">{formatBRL(summary.vgvEstoqueDisponivel)}</strong>
+              Valor Tabela: <strong className="text-sky-600 dark:text-sky-400 font-mono">{formatBRL(summary.vgvEstoqueDisponivel)}</strong>
             </div>
           </div>
           <div className="text-right">
@@ -356,22 +385,25 @@ export const CommercialPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Unidades Bloqueadas para Venda */}
+        {/* Unidades Contratadas / Reservadas */}
         <div className="glass-card p-4 rounded-2xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/20 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
               <Lock className="w-4 h-4 text-amber-500" />
-              <span>Unidades Bloqueadas para Venda</span>
+              <span>Contratadas & Reservadas</span>
             </span>
             <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
-              {summary.blockedUnits} <span className="text-xs font-normal text-slate-500">unidades estratégicas</span>
+              {summary.blockedUnits}{' '}
+              <span className="text-xs font-normal text-slate-500">
+                ({summary.contractedUnits} contratadas • {summary.reservedUnits} reservada)
+              </span>
             </div>
             <div className="text-xs text-slate-500">
-              Valor Bloqueado: <strong className="text-amber-600 dark:text-amber-400 font-mono">{formatBRL(summary.vgvEstoqueBloqueado)}</strong>
+              Valor Total: <strong className="text-amber-600 dark:text-amber-400 font-mono">{formatBRL(summary.vgvEstoqueBloqueado)}</strong>
             </div>
           </div>
           <div className="text-right">
-            <span className="text-[10px] text-slate-400 block">Permutas & Reservas</span>
+            <span className="text-[10px] text-slate-400 block">Área Indisponível</span>
             <span className="text-sm font-bold text-slate-800 dark:text-slate-200 font-mono">
               {summary.blockedPrivateAreaM2.toLocaleString('pt-BR')} m²
             </span>
@@ -393,7 +425,7 @@ export const CommercialPage: React.FC = () => {
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Tabela Nominal (80 Unidades)</span>
+              <span>Tabela Nominal ({units.length} Unidades)</span>
             </button>
             <button
               onClick={() => setViewMode('tower')}
@@ -438,7 +470,7 @@ export const CommercialPage: React.FC = () => {
                   : 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
               }`}
             >
-              Disponíveis ({summary.availableUnits})
+              Livres ({summary.availableUnits})
             </button>
             <button
               onClick={() => setStatusFilter('bloqueada')}
@@ -448,7 +480,7 @@ export const CommercialPage: React.FC = () => {
                   : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
               }`}
             >
-              Bloqueadas ({summary.blockedUnits})
+              Contratadas / Reserv. ({summary.blockedUnits})
             </button>
           </div>
         </div>
@@ -461,7 +493,7 @@ export const CommercialPage: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por unidade, comprador, contrato ou motivo de bloqueio..."
+              placeholder="Buscar por unidade, cliente, contrato ou status..."
               className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
@@ -489,16 +521,16 @@ export const CommercialPage: React.FC = () => {
             <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
               <thead className="bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur text-slate-600 dark:text-slate-400 uppercase text-[10px] font-bold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="p-3 w-16 text-center">Unid.</th>
-                  <th className="p-3 w-16 text-center">Andar</th>
-                  <th className="p-3 min-w-[180px]">Tipologia</th>
-                  <th className="p-3 text-right">Área Priv.</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 min-w-[200px]">Comprador / Contrato / Destinação</th>
-                  <th className="p-3 text-right">Valor Venda (R$)</th>
+                  <th className="p-3 w-24 text-center">Unidade</th>
+                  <th className="p-3 w-14 text-center">Andar</th>
+                  <th className="p-3 min-w-[160px]">Tipologia</th>
+                  <th className="p-3 text-right">Área</th>
+                  <th className="p-3 text-center">Status ERP</th>
+                  <th className="p-3 min-w-[230px]">Cliente / Contrato / Reajuste</th>
+                  <th className="p-3 text-right">Valor Contrato / Tab.</th>
                   <th className="p-3 text-right">Preço / m²</th>
-                  <th className="p-3 text-right">Recebido (R$)</th>
-                  <th className="p-3 text-right">A Receber (R$)</th>
+                  <th className="p-3 text-right">Valor Pago (R$)</th>
+                  <th className="p-3 text-right">Saldo (R$)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
@@ -513,8 +545,15 @@ export const CommercialPage: React.FC = () => {
                       onClick={() => setSelectedUnit(u)}
                       className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
                     >
-                      <td className="p-3 text-center font-bold font-mono text-slate-900 dark:text-white">
-                        {u.unitNumber}
+                      <td className="p-3 text-center">
+                        <span className="font-bold font-mono text-slate-900 dark:text-white block">
+                          {u.unitNumber}
+                        </span>
+                        {u.unitLabel !== u.unitNumber && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                            {u.unitLabel.replace(u.unitNumber, '').trim()}
+                          </span>
+                        )}
                       </td>
                       <td className="p-3 text-center text-slate-500 font-mono text-xs">
                         {u.floor}º
@@ -533,17 +572,17 @@ export const CommercialPage: React.FC = () => {
                       <td className="p-3 text-center">
                         {isSold && (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                            ● Vendida
+                            ● {u.isPaidOff ? 'QUITADA' : u.erpStatus}
                           </span>
                         )}
                         {isAvailable && (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
-                            ● Disponível
+                            ● {u.erpStatus}
                           </span>
                         )}
                         {isBlocked && (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                            ● Bloqueada
+                            ● {u.erpStatus}
                           </span>
                         )}
                       </td>
@@ -553,20 +592,26 @@ export const CommercialPage: React.FC = () => {
                             <span className="font-bold text-slate-900 dark:text-white block">
                               {u.buyerName}
                             </span>
-                            <span className="text-[10px] font-mono text-slate-400">
-                              {u.contractNumber} • {u.contractDate}
+                            <span className="text-[10px] font-mono text-slate-400 block">
+                              {u.contractNumber}
+                              {u.contractDate ? ` • ${formatDateBR(u.contractDate)}` : ''}
+                              {u.constructionIndex ? ` • ${u.constructionIndex}/${u.postDeliveryIndex || '-'}` : ''}
                             </span>
                           </div>
                         )}
                         {isAvailable && (
                           <span className="text-xs text-sky-600 dark:text-sky-400 font-medium">
-                            Disponível para comercialização
+                            Livre em estoque na tabela
                           </span>
                         )}
                         {isBlocked && (
                           <div className="text-amber-700 dark:text-amber-300 text-xs">
-                            <span className="font-semibold block">{u.blockedReason}</span>
-                            <span className="text-[10px] text-slate-400">Sem autorização de venda</span>
+                            <span className="font-semibold block">{u.buyerName || u.blockedReason}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {u.erpStatus}
+                              {u.contractNumber ? ` • Contrato: ${u.contractNumber}` : ''}
+                              {u.contractDate ? ` • ${formatDateBR(u.contractDate)}` : ''}
+                            </span>
                           </div>
                         )}
                       </td>
@@ -577,10 +622,10 @@ export const CommercialPage: React.FC = () => {
                         {formatBRL(u.priceM2)}/m²
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        {isSold ? formatBRL(u.paidValue) : '-'}
+                        {u.paidValue > 0 ? formatBRL(u.paidValue) : '-'}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
-                        {isSold ? formatBRL(u.receivableValue) : formatBRL(u.unitValue)}
+                        {formatBRL(u.receivableValue)}
                       </td>
                     </tr>
                   );
@@ -610,13 +655,13 @@ export const CommercialPage: React.FC = () => {
                 </strong>
               </div>
               <div>
-                <span className="text-slate-400 mr-1.5">Recebido:</span>
+                <span className="text-slate-400 mr-1.5">Valor Pago:</span>
                 <strong className="text-emerald-600 dark:text-emerald-400">
                   {formatBRL(filteredUnits.reduce((acc, u) => acc + u.paidValue, 0))}
                 </strong>
               </div>
               <div>
-                <span className="text-slate-400 mr-1.5">A Receber:</span>
+                <span className="text-slate-400 mr-1.5">Saldo:</span>
                 <strong className="text-amber-600 dark:text-amber-400">
                   {formatBRL(filteredUnits.reduce((acc, u) => acc + u.receivableValue, 0))}
                 </strong>
@@ -643,15 +688,15 @@ export const CommercialPage: React.FC = () => {
             <div className="flex items-center space-x-3 text-xs">
               <span className="flex items-center space-x-1.5">
                 <span className="w-3 h-3 rounded-md bg-emerald-500 inline-block" />
-                <span className="text-slate-600 dark:text-slate-400">Vendida (64)</span>
+                <span className="text-slate-600 dark:text-slate-400">Vendida ({summary.soldUnits})</span>
               </span>
               <span className="flex items-center space-x-1.5">
                 <span className="w-3 h-3 rounded-md bg-sky-500 inline-block" />
-                <span className="text-slate-600 dark:text-slate-400">Disponível (12)</span>
+                <span className="text-slate-600 dark:text-slate-400">Livre ({summary.availableUnits})</span>
               </span>
               <span className="flex items-center space-x-1.5">
                 <span className="w-3 h-3 rounded-md bg-amber-500 inline-block" />
-                <span className="text-slate-600 dark:text-slate-400">Bloqueada (4)</span>
+                <span className="text-slate-600 dark:text-slate-400">Contratada / Reserv. ({summary.blockedUnits})</span>
               </span>
             </div>
           </div>
@@ -689,13 +734,13 @@ export const CommercialPage: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center justify-between font-mono font-bold">
-                            <span>Apto {u.unitNumber}</span>
+                            <span>Apto {u.unitLabel}</span>
                             <span className="text-[10px] font-normal">{u.privateAreaM2} m²</span>
                           </div>
                           <div className="text-[11px] truncate mt-0.5">
                             {isSold && <span>{u.buyerName}</span>}
-                            {isAvailable && <span className="font-semibold">Disponível</span>}
-                            {isBlocked && <span className="font-semibold">{u.blockedReason}</span>}
+                            {isAvailable && <span className="font-semibold">Livre em Estoque</span>}
+                            {isBlocked && <span className="font-semibold">{u.buyerName || u.erpStatus}</span>}
                           </div>
                           <div className="text-[10px] font-mono mt-1 font-bold">
                             {formatBRL(u.unitValue)}
@@ -714,15 +759,15 @@ export const CommercialPage: React.FC = () => {
       {/* MODAL DETALHE DA UNIDADE SELECIONADA */}
       {selectedUnit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-2xl">
+          <div className="bg-white dark:bg-[#0c1424] border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             {/* Header Modal */}
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div>
                 <span className="text-xs text-blue-500 font-bold uppercase tracking-wider block">
-                  Ficha da Unidade
+                  Ficha da Unidade • Relatório ERP
                 </span>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                  Apartamento {selectedUnit.unitNumber} • {selectedUnit.floor}º Andar
+                  Apartamento {selectedUnit.unitLabel} • {selectedUnit.floor}º Andar
                 </h3>
               </div>
               <button
@@ -744,7 +789,9 @@ export const CommercialPage: React.FC = () => {
               </div>
 
               <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Valor da Unidade</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                  {selectedUnit.status === 'disponivel' ? 'Valor de Tabela (SALDO)' : 'Valor do Contrato (VL_CNT)'}
+                </span>
                 <strong className="text-blue-600 dark:text-blue-400 text-sm block mt-0.5 font-mono">
                   {formatBRL(selectedUnit.unitValue)}
                 </strong>
@@ -755,7 +802,7 @@ export const CommercialPage: React.FC = () => {
             {/* Status e Comprador */}
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-bold uppercase text-[10px]">Status Comercial</span>
+                <span className="text-slate-400 font-bold uppercase text-[10px]">Status no ERP (DE_STA)</span>
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-bold ${
                     selectedUnit.status === 'vendida'
@@ -765,53 +812,67 @@ export const CommercialPage: React.FC = () => {
                       : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                   }`}
                 >
-                  ● {selectedUnit.status.toUpperCase()}
+                  ● {selectedUnit.erpStatus} {selectedUnit.isPaidOff ? '(QUITADO)' : ''}
                 </span>
               </div>
 
-              {selectedUnit.status === 'vendida' && (
+              {(selectedUnit.status === 'vendida' || selectedUnit.status === 'bloqueada') && (
                 <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Cliente Comprador:</span>
-                    <strong className="text-slate-900 dark:text-white font-semibold">
-                      {selectedUnit.buyerName}
-                    </strong>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Número do Contrato:</span>
-                    <span className="font-mono text-slate-800 dark:text-slate-200 font-bold">
-                      {selectedUnit.contractNumber}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Data da Assinatura:</span>
-                    <span className="font-mono text-slate-600 dark:text-slate-400">
-                      {selectedUnit.contractDate}
-                    </span>
-                  </div>
+                  {selectedUnit.buyerName && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-500">Cliente / Razão Social (RZ_SCL):</span>
+                      <strong className="text-slate-900 dark:text-white font-semibold text-right">
+                        {selectedUnit.buyerName}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedUnit.contractNumber && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Código do Contrato (CD_CNT):</span>
+                      <span className="font-mono text-slate-800 dark:text-slate-200 font-bold">
+                        {selectedUnit.contractNumber}
+                      </span>
+                    </div>
+                  )}
+                  {selectedUnit.contractDate && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Data do Contrato (DT_CNT):</span>
+                      <span className="font-mono text-slate-600 dark:text-slate-400">
+                        {formatDateBR(selectedUnit.contractDate)}
+                      </span>
+                    </div>
+                  )}
+                  {(selectedUnit.constructionIndex || selectedUnit.postDeliveryIndex) && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Indexadores (Obra / Habite-se):</span>
+                      <span className="font-mono text-slate-700 dark:text-slate-300">
+                        {selectedUnit.constructionIndex || '-'} / {selectedUnit.postDeliveryIndex || '-'}
+                        {selectedUnit.postDeliveryInterest ? ` (+${selectedUnit.postDeliveryInterest}% a.m.)` : ''}
+                      </span>
+                    </div>
+                  )}
+                  {selectedUnit.readjustmentFrequency && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Periodicidade Reajuste:</span>
+                      <span className="font-mono text-slate-700 dark:text-slate-300">
+                        {selectedUnit.readjustmentFrequency}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-emerald-600 dark:text-emerald-400 font-bold">
-                    <span>Valores Recebidos até o Momento:</span>
+                    <span>Valor Pago (ValorPago):</span>
                     <span className="font-mono">{formatBRL(selectedUnit.paidValue)}</span>
                   </div>
                   <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 font-bold">
-                    <span>Saldo a Receber das Vendas:</span>
+                    <span>Saldo Devedor Atualizado (SALDO):</span>
                     <span className="font-mono">{formatBRL(selectedUnit.receivableValue)}</span>
                   </div>
                 </div>
               )}
 
-              {selectedUnit.status === 'bloqueada' && (
-                <div className="space-y-1 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <span className="text-amber-700 dark:text-amber-300 font-bold block">
-                    Motivo do Bloqueio:
-                  </span>
-                  <p className="text-slate-600 dark:text-slate-400">{selectedUnit.blockedReason}</p>
-                </div>
-              )}
-
               {selectedUnit.status === 'disponivel' && (
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-sky-600 dark:text-sky-400">
-                  Unidade livre em estoque na tabela de vendas para contratação imediata.
+                  Unidade livre em estoque na tabela de vendas (`SALDO`: {formatBRL(selectedUnit.receivableValue)}).
                 </div>
               )}
             </div>
@@ -827,6 +888,13 @@ export const CommercialPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL DE IMPORTAÇÃO UNIFICADA (vendasgeral.xlsx) */}
+      <CommercialImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportSuccess={(updated) => setUnits(updated)}
+      />
     </div>
   );
 };
