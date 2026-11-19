@@ -21,16 +21,27 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
-export const RealIncurredCompositionView: React.FC = () => {
+export const RealIncurredCompositionView: React.FC<{ workId?: string; workName?: string }> = ({
+  workId = 'work-1',
+  workName = 'Atrium Select',
+}) => {
   const { incurredCosts } = useData();
   const [activeTab, setActiveTab] = useState<'resumo' | 'obra' | 'extra_obra'>('resumo');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'todos' | 'obra' | 'extra'>('todos');
 
+  const workCosts = useMemo(
+    () =>
+      incurredCosts.filter((c) =>
+        workId === 'work-1' ? !c.work_id || c.work_id === 'work-1' : c.work_id === workId
+      ),
+    [incurredCosts, workId]
+  );
+
   const totalIncurredFromState = useMemo(() => {
-    if (incurredCosts.length === 0) return ATRIUM_REAL_TOTALS.totalGeral;
-    return incurredCosts.reduce((acc, c) => acc + (c.net_value || c.gross_value || 0), 0);
-  }, [incurredCosts]);
+    if (workId === 'work-1' && workCosts.length === 0) return ATRIUM_REAL_TOTALS.totalGeral;
+    return workCosts.reduce((acc, c) => acc + (c.net_value || c.gross_value || 0), 0);
+  }, [workCosts, workId]);
 
   // Segregated list of consolidated accounts
   const obraAccounts = useMemo(

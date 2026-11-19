@@ -51,7 +51,14 @@ import {
 import { calculateWeightedProgress, calculatePhysicalProgressWeighted, simulateInccAdjustment, formatBRL } from '../lib/utils';
 import { useAuth } from './AuthContext';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
-import { fetchAllFromSupabase, saveImportedEntriesToSupabase } from '../lib/supabase-sync';
+import {
+  fetchAllFromSupabase,
+  saveImportedEntriesToSupabase,
+  saveWorkToSupabase,
+  saveBudgetAccountsToSupabase,
+  toSupabaseWorkUuid,
+  toSupabaseBudgetVersionUuid,
+} from '../lib/supabase-sync';
 import { DeParaRule } from '../lib/atrium-real-data';
 
 interface DataContextType {
@@ -284,11 +291,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (result) {
         if (result.works.length > 0) {
           setWorks(prev => {
-            const others = prev.filter(w => w.code !== 'OBR-001' && w.id !== 'work-1');
-            const fetchedWork = result.works[0];
-            const currentLocal = prev.find(w => w.code === 'OBR-001' || w.id === 'work-1');
-            const activeWorkStages = stages.filter(s => s.work_id === fetchedWork.id || s.work_id === 'work-1');
-            const liveProg = activeWorkStages.length > 0 ? calculateWeightedProgress(activeWorkStages) : fetchedWork.progress_percent;
+            const dbWorksById = new Map(result.works.map(w => [w.id, w]));
+            const dbWorksByCode = new Map(result.works.map(w => [w.code, w]));
 
             let customWorkSaved: any = null;
             try {
@@ -296,23 +300,60 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (item) customWorkSaved = JSON.parse(item);
             } catch {}
 
-            const consolidatedWork: Work = {
-              ...fetchedWork,
-              name: customWorkSaved?.name || currentLocal?.name || fetchedWork.name,
-              client: customWorkSaved?.client || currentLocal?.client || fetchedWork.client,
-              progress_percent: liveProg > 0 ? liveProg : fetchedWork.progress_percent,
-            };
-            return [consolidatedWork, ...others];
+            const mergedExisting = prev.map(localWork => {
+              const remoteWork = dbWorksById.get(localWork.id) || dbWorksByCode.get(localWork.code);
+              if (!remoteWork) return localWork;
+
+              const activeWorkStages = stages.filter(s => s.work_id === localWork.id);
+              const liveProg = activeWorkStages.length > 0
+                ? calculateWeightedProgress(activeWorkStages)
+                : remoteWork.progress_percent;
+
+              const isAtrium = localWork.id === 'work-1' || localWork.code === 'OBR-001';
+              return {
+                ...localWork,
+                ...remoteWork,
+                id: localWork.id,
+                map_coordinates: localWork.map_coordinates,
+                commercial_data: localWork.commercial_data,
+                typologies: localWork.typologies,
+                schedule_reconciliation: localWork.schedule_reconciliation,
+                name: (isAtrium && customWorkSaved?.name) || remoteWork.name || localWork.name,
+                client: (isAtrium && customWorkSaved?.client) || remoteWork.client || localWork.client,
+                progress_percent: liveProg > 0 ? liveProg : (remoteWork.progress_percent || localWork.progress_percent),
+              };
+            });
+
+            // Adiciona novas obras vindas do banco que ainda não estavam na lista local
+            const existingIds = new Set(mergedExisting.map(w => w.id));
+            const existingCodes = new Set(mergedExisting.map(w => w.code));
+            const brandNewFromDb = result.works.filter(
+              rw => !existingIds.has(rw.id) && !existingCodes.has(rw.code)
+            );
+
+            return [...mergedExisting, ...brandNewFromDb];
           });
         }
         if (result.incurredCosts.length > 0) {
-          setIncurredCosts(result.incurredCosts);
+          setIncurredCosts(prev => {
+            const syncedWorkIds = new Set(result.incurredCosts.map(c => c.work_id));
+            const preservedOtherWorks = prev.filter(c => !syncedWorkIds.has(c.work_id));
+            return [...result.incurredCosts, ...preservedOtherWorks];
+          });
         }
         if (result.revenues.length > 0) {
-          setRevenues(result.revenues);
+          setRevenues(prev => {
+            const syncedWorkIds = new Set(result.revenues.map(r => r.work_id));
+            const preservedOtherWorks = prev.filter(r => !syncedWorkIds.has(r.work_id));
+            return [...result.revenues, ...preservedOtherWorks];
+          });
         }
         if (result.budgetAccounts.length > 0) {
-          setBudgetAccounts(result.budgetAccounts);
+          setBudgetAccounts(prev => {
+            const syncedWorkIds = new Set(result.budgetAccounts.map(b => b.work_id));
+            const preservedOtherWorks = prev.filter(b => !syncedWorkIds.has(b.work_id));
+            return [...result.budgetAccounts, ...preservedOtherWorks];
+          });
         }
         if (result.erpToBudgetTotalizerMappings.length > 0) {
           setErpToBudgetTotalizerMappings(result.erpToBudgetTotalizerMappings);
@@ -442,15 +483,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Works CRUD
   const addWork = (data: Omit<Work, 'id' | 'created_at' | 'updated_at' | 'progress_percent'>): Work => {
+    const nextNum = works.length + 1;
     const newWork: Work = {
       ...data,
-      id: 'work-' + Date.now(),
+      id: `work-${nextNum}-${Date.now().toString().slice(-4)}`,
       progress_percent: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     setWorks(prev => [newWork, ...prev]);
     addAuditLog('Criar Obra', 'works', newWork.id, `Obra ${newWork.name} (${newWork.code}) cadastrada`);
+    saveWorkToSupabase(newWork).catch(console.warn);
     return newWork;
   };
 
@@ -459,31 +502,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (sanitizedUpdates.progress_percent !== undefined && sanitizedUpdates.progress_percent > 100) {
       sanitizedUpdates.progress_percent = Number((sanitizedUpdates.progress_percent / 100).toFixed(2));
     }
-    setWorks(prev => prev.map(w => w.id === id ? { ...w, ...sanitizedUpdates, updated_at: new Date().toISOString() } : w));
+    setWorks(prev => {
+      const next = prev.map(w => w.id === id ? { ...w, ...sanitizedUpdates, updated_at: new Date().toISOString() } : w);
+      const updatedWork = next.find(w => w.id === id);
+      if (updatedWork && isSupabaseConfigured() && supabase) {
+        saveWorkToSupabase(updatedWork).catch(console.warn);
+      }
+      return next;
+    });
     addAuditLog('Atualizar Obra', 'works', id, `Atualização dos dados da obra`);
 
-    // Salva em chave protegida para nunca perder ao limpar cache transitório
-    try {
-      const existingCustom = JSON.parse(localStorage.getItem('gestao_obras_custom_work_metadata') || '{}');
-      localStorage.setItem('gestao_obras_custom_work_metadata', JSON.stringify({ ...existingCustom, ...sanitizedUpdates }));
-    } catch {}
-
-    // Persistência em nuvem no Supabase
-    if (isSupabaseConfigured() && supabase) {
-      const dbPayload: any = {};
-      if (sanitizedUpdates.name) dbPayload.name = sanitizedUpdates.name;
-      if (sanitizedUpdates.client) dbPayload.client = sanitizedUpdates.client;
-      if (sanitizedUpdates.address) dbPayload.address = sanitizedUpdates.address;
-      if (sanitizedUpdates.status) dbPayload.status = sanitizedUpdates.status;
-      if (sanitizedUpdates.progress_percent !== undefined) dbPayload.progress_percent = sanitizedUpdates.progress_percent;
-      if (sanitizedUpdates.contract_value !== undefined) dbPayload.contract_value = sanitizedUpdates.contract_value;
-      dbPayload.updated_at = new Date().toISOString();
-
-      Promise.resolve(
-        supabase.from('works').update(dbPayload).or(`code.eq.OBR-001,erp_code.eq.ERP-CE-1042,id.eq.${id}`)
-      ).then(({ error }) => {
-        if (!error) console.log('[DataContext] Obra atualizada no Supabase.');
-      }).catch(console.warn);
+    if (id === 'work-1') {
+      try {
+        const existingCustom = JSON.parse(localStorage.getItem('gestao_obras_custom_work_metadata') || '{}');
+        localStorage.setItem('gestao_obras_custom_work_metadata', JSON.stringify({ ...existingCustom, ...sanitizedUpdates }));
+      } catch {}
     }
   };
 
@@ -1488,18 +1521,246 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const importPcoWorkbook = async (parsed: PcoParsedData) => {
-    // 1. Atualizar obra correspondente com métricas físicas e financeiras
-    const rawProgress = parsed.macro.accumulatedExecutedProgress;
+    const targetWork = works.find((w) => w.id === parsed.workId) || works[0];
+    const totalPlannedBudget = parsed.macro?.totalPlannedBudget || parsed.base_budget?.total_amount || 0;
+    const rawProgress = parsed.macro?.accumulatedExecutedProgress || 0;
     const physicalPercent = rawProgress <= 1.0 ? Number((rawProgress * 100).toFixed(2)) : Number(rawProgress.toFixed(2));
+
+    // 1. Atualizar obra correspondente com métricas físicas e financeiras
     updateWork(parsed.workId, {
-      pco_physical_progress: physicalPercent,
-      progress_percent: physicalPercent > 0 ? physicalPercent : undefined,
-      pco_budget_total: parsed.macro.totalPlannedBudget,
-      pco_real_spent: parsed.real.totalSpent,
+      pco_physical_progress: physicalPercent > 0 ? physicalPercent : targetWork?.pco_physical_progress,
+      progress_percent: physicalPercent > 0 ? physicalPercent : targetWork?.progress_percent,
+      pco_budget_total: totalPlannedBudget > 0 ? totalPlannedBudget : targetWork?.pco_budget_total,
+      contract_value: totalPlannedBudget > 0 ? totalPlannedBudget : targetWork?.contract_value,
+      pco_real_spent: parsed.real?.totalSpent || targetWork?.pco_real_spent,
       pco_last_imported_at: new Date().toISOString(),
     });
 
-    // 2. Atualizar ou criar perfil de importação PCO
+    // 2. Converter e salvar as contas orçamentárias (BASE ORÇAMENTO) para a obra selecionada
+    const baseItems = parsed.base_budget?.items || [];
+    if (baseItems.length > 0) {
+      const versionId = `bv-${parsed.workId}-v1`;
+      const newVersion: BudgetVersion = {
+        id: versionId,
+        work_id: parsed.workId,
+        version_number: 1,
+        title: `Orçamento Base Oficial PCO - ${targetWork?.name || parsed.workId}`,
+        reason: `Importado de ${parsed.fileName || 'Planilha PCO (.xlsx)'}`,
+        status: 'aprovada',
+        is_current_approved: true,
+        total_amount: totalPlannedBudget,
+        user_name: user?.name || 'Engenharia / Custos',
+        created_at: new Date().toISOString(),
+      };
+
+      setBudgetVersions((prev) => {
+        const others = prev.filter((v) => v.work_id !== parsed.workId);
+        return [newVersion, ...others];
+      });
+
+      const newAccounts: BudgetAccount[] = baseItems.map((it: any, idx: number) => {
+        const val = Number(it.valor || 0);
+        const weight = totalPlannedBudget > 0 ? Number(((val / totalPlannedBudget) * 100).toFixed(4)) : 0;
+        const groupName = String(it.grupo_orcamento || 'GERAL').trim();
+        const isIndirect =
+          groupName.toUpperCase().includes('PRELIMINAR') ||
+          groupName.toUpperCase().includes('ADMINISTRA') ||
+          groupName.toUpperCase().includes('PROJETO') ||
+          groupName.toUpperCase().includes('EQUIPAMENTO');
+        return {
+          id: `ba-${parsed.workId}-${idx + 1}`,
+          work_id: parsed.workId,
+          budget_version_id: versionId,
+          version_id: versionId,
+          code: it.code || `${String(idx + 1).padStart(2, '0')}.01`,
+          account_code: it.code || `${String(idx + 1).padStart(2, '0')}.01`,
+          description: it.description || it.raw_conta_orcamento || `Subetapa ${idx + 1}`,
+          group_etapa: groupName,
+          account_type: 'atividade',
+          cost_type: isIndirect ? 'indireto' : 'direto',
+          display_order: idx + 1,
+          order_index: idx + 1,
+          quantity: Number(it.d || 1),
+          unit: String(it.c || 'VB'),
+          unit_cost: val,
+          unit_value: val,
+          total_amount: val,
+          physical_weight_percent: weight,
+          progress_planned: physicalPercent,
+          progress_actual: physicalPercent,
+          erp_account: it.conta_sws || 'CUSTO DE OBRA',
+          expense_type: it.fg || 'MATERIAL',
+          status: 'aprovado',
+          created_at: new Date().toISOString(),
+        };
+      });
+
+      setBudgetAccounts((prev) => {
+        const others = prev.filter((a) => a.work_id !== parsed.workId);
+        return [...others, ...newAccounts];
+      });
+
+      // Persiste no Supabase em public.budget_versions e public.budget_accounts para a obra selecionada
+      if (targetWork) {
+        await saveBudgetAccountsToSupabase(
+          { ...targetWork, contract_value: totalPlannedBudget || targetWork.contract_value },
+          newAccounts.map((a, i) => ({
+            code: a.code,
+            description: a.description,
+            group_etapa: a.group_etapa || 'ORÇAMENTO GERAL',
+            cost_type: a.cost_type as 'direto' | 'indireto',
+            unit: a.unit,
+            quantity: a.quantity,
+            unit_cost: a.unit_cost,
+            total_amount: a.total_amount,
+            physical_weight_percent: a.physical_weight_percent,
+            erp_account: a.erp_account,
+            expense_type: a.expense_type,
+            original_row_number: i + 1,
+          }))
+        );
+      }
+
+      // Se a obra não for o Atrium (ou se tiver etapas de % INDIRETOS / % DIRETOS), atualiza também as etapas da obra
+      if (parsed.workId !== 'work-1') {
+        const indirectItems = parsed.indirects?.items || [];
+        const directItems = parsed.directs?.items || [];
+        const allPcoStages = [...indirectItems, ...directItems];
+
+        if (allPcoStages.length > 0) {
+          const generatedStages: Stage[] = allPcoStages.map((st: any, idx: number) => {
+            const prog = Number(st.executed_accumulated || 0);
+            const progPercent = prog <= 1.0 && prog > 0 ? Number((prog * 100).toFixed(2)) : Number(prog.toFixed(2));
+            const wgt = Number(st.weight_percent || 0);
+            const wgtPercent = wgt <= 1.0 && wgt > 0 ? Number((wgt * 100).toFixed(2)) : Number(wgt.toFixed(2));
+            return {
+              id: `stage-${parsed.workId}-${idx + 1}`,
+              work_id: parsed.workId,
+              code: st.item_code || `${String(idx + 1).padStart(2, '0')}`,
+              name: st.activity || `Etapa ${idx + 1}`,
+              order_index: idx + 1,
+              responsible: targetWork?.engineer_name || 'Engenharia',
+              weight_percent: wgtPercent,
+              progress_planned: progPercent,
+              progress_percent: progPercent,
+              planned_start: parsed.work_metadata?.start_date || targetWork?.planned_start || '2025-02-01',
+              planned_end: parsed.work_metadata?.end_date || targetWork?.planned_end || '2028-02-01',
+              status: progPercent >= 100 ? 'concluida' : progPercent > 0 ? 'em_andamento' : 'nao_iniciada',
+              budget_planned: Number(st.cost_budget || 0),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+          });
+          setStages((prev) => [...prev.filter((s) => s.work_id !== parsed.workId), ...generatedStages]);
+        } else {
+          // Agrupa pelos grupos de BASE ORÇAMENTO para gerar as macroetapas da obra automaticamente
+          const groupMap = new Map<string, number>();
+          newAccounts.forEach((acc) => {
+            const g = acc.group_etapa || 'GERAL';
+            groupMap.set(g, (groupMap.get(g) || 0) + acc.total_amount);
+          });
+          const generatedStages: Stage[] = Array.from(groupMap.entries()).map(([gName, gVal], idx) => {
+            const wgtPercent = totalPlannedBudget > 0 ? Number(((gVal / totalPlannedBudget) * 100).toFixed(2)) : 0;
+            return {
+              id: `stage-${parsed.workId}-${idx + 1}`,
+              work_id: parsed.workId,
+              code: `${String(idx + 1).padStart(2, '0')}.00`,
+              name: gName,
+              order_index: idx + 1,
+              responsible: targetWork?.engineer_name || 'Engenharia',
+              weight_percent: wgtPercent,
+              progress_planned: physicalPercent,
+              progress_percent: physicalPercent,
+              planned_start: targetWork?.planned_start || '2025-02-01',
+              planned_end: targetWork?.planned_end || '2028-02-01',
+              status: physicalPercent >= 100 ? 'concluida' : physicalPercent > 0 ? 'em_andamento' : 'nao_iniciada',
+              budget_planned: gVal,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+          });
+          if (generatedStages.length > 0) {
+            setStages((prev) => [...prev.filter((s) => s.work_id !== parsed.workId), ...generatedStages]);
+          }
+        }
+      }
+    }
+
+    // 3. Se houver aba REAL na planilha e for outra obra, importar lançamentos e persistir no Supabase
+    const realEntries = parsed.real_entries?.entries || [];
+    if (realEntries.length > 0 && parsed.workId !== 'work-1') {
+      const importedCosts: IncurredCost[] = [];
+      const importedRevs: Revenue[] = [];
+      const dbRows: any[] = [];
+
+      realEntries.forEach((entry: any, idx: number) => {
+        const val = Number(entry.vl_lnc_cst || 0);
+        if (!val) return;
+        const dt = entry.date || new Date().toISOString().slice(0, 10);
+        const doc = entry.documento || `DOC-${idx + 1}`;
+        const accName = entry.nm_cta_cst || 'Despesa Geral';
+        const adjusted = entry.de_para || accName;
+
+        dbRows.push({
+          document_number: doc,
+          cost_account_name: accName,
+          entry_date: dt,
+          supplier_contractor_name: entry.nm_frn || 'Fornecedor ERP',
+          entry_description: entry.de_lnc_cst || 'Lançamento PCO/ERP',
+          amount: val,
+          nature_classification: entry.natureza === 'receita' ? 'receita' : 'custo_obra',
+          adjusted_consolidated_account: adjusted,
+          external_entry_id: `pco_${parsed.workId}_${idx + 1}`,
+        });
+
+        if (entry.natureza === 'receita') {
+          importedRevs.push({
+            id: `rev-${parsed.workId}-${idx + 1}`,
+            work_id: parsed.workId,
+            external_id: doc,
+            date: dt,
+            document_number: doc,
+            description: entry.de_lnc_cst || 'Receita de Venda',
+            contracted_value: val,
+            recognized_value: val,
+            received_value: val,
+            status: 'recebido',
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          importedCosts.push({
+            id: `cost-${parsed.workId}-${idx + 1}`,
+            work_id: parsed.workId,
+            external_id: doc,
+            date: dt,
+            document_number: doc,
+            cost_center: `CC-${parsed.workId.toUpperCase()}`,
+            category: 'material',
+            supplier_name: entry.nm_frn || 'Fornecedor ERP',
+            description: entry.de_lnc_cst || 'Lançamento ERP',
+            gross_value: val,
+            discounts: 0,
+            taxes: 0,
+            net_value: val,
+            payment_status: 'pago',
+            erp_account_code: accName,
+            created_at: new Date().toISOString(),
+          });
+        }
+      });
+
+      if (importedCosts.length > 0) {
+        setIncurredCosts((prev) => [...prev.filter((c) => c.work_id !== parsed.workId), ...importedCosts]);
+      }
+      if (importedRevs.length > 0) {
+        setRevenues((prev) => [...prev.filter((r) => r.work_id !== parsed.workId), ...importedRevs]);
+      }
+      if (dbRows.length > 0) {
+        await saveImportedEntriesToSupabase(dbRows, `batch-pco-${parsed.workId}-${Date.now()}`, parsed.workId);
+      }
+    }
+
+    // 4. Atualizar ou criar perfil de importação PCO
     const existingIndex = pcoImportProfiles.findIndex((p) => p.work_id === parsed.workId);
     const updatedProfile: PcoImportProfile = {
       id: existingIndex >= 0 ? pcoImportProfiles[existingIndex].id : `pco-profile-${Date.now()}`,
@@ -1538,7 +1799,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       'Importação PCO',
       'pco_imports',
       parsed.workId,
-      `Planilha PCO "${parsed.fileName}" importada com sucesso: Físico ${physicalPercent.toFixed(2)}%, Orçado ${formatBRL(parsed.macro.totalPlannedBudget)}, Real ${formatBRL(parsed.real.totalSpent)}`
+      `Planilha PCO "${parsed.fileName}" importada com sucesso para ${targetWork?.name || parsed.workId}: Orçado ${formatBRL(totalPlannedBudget)}`
     );
   };
 

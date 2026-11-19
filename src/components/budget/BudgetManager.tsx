@@ -1,28 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useData } from '../../contexts/DataContext';
-import { useAuth } from '../../contexts/AuthContext';
 import { BaseOrcamentoTable } from './BaseOrcamentoTable';
 import { BudgetRevisionModal, BudgetRevisionData } from './BudgetRevisionModal';
+import { PcoImportModal } from '../importer/PcoImportModal';
 import { ATRIUM_BASE_TOTALS } from '../../lib/atrium-base-orcamento';
 import { formatBRL, formatDateBR } from '../../lib/utils';
 import {
-  Calculator,
   Plus,
   History,
   TrendingUp,
   Layers,
   UploadCloud,
-  FileSpreadsheet,
   Building2,
-  Search,
-  Filter,
-  CheckCircle2,
-  AlertTriangle,
-  Lock,
-  Unlock,
   ShieldCheck,
-  Calendar,
-  ExternalLink,
 } from 'lucide-react';
 
 interface BudgetManagerProps {
@@ -30,45 +20,71 @@ interface BudgetManagerProps {
 }
 
 export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) => {
-  const { works } = useData();
-  const { canEdit } = useAuth();
+  const { works, budgetAccounts } = useData();
 
   const [currentWorkId, setCurrentWorkId] = useState<string>(
-    selectedWorkId || works[0]?.id || ''
+    selectedWorkId || works[0]?.id || 'work-1'
   );
 
-  // Abas do Módulo de Orçamento (Apenas Itens 1 e 2 solicitados)
+  const currentWork = useMemo(
+    () => works.find((w) => w.id === currentWorkId) || works[0],
+    [works, currentWorkId]
+  );
+
+  // Abas do Módulo de Orçamento
   const [activeTab, setActiveTab] = useState<'base_orcamento' | 'incc_versoes'>('base_orcamento');
 
   // Modais
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
-  // Versões de Orçamento Criadas (com a inicial da BASE ORÇAMENTO)
-  const [budgetVersionsList, setBudgetVersionsList] = useState<BudgetRevisionData[]>([
-    {
+  // Calcula total orçado da obra selecionada
+  const baseTotalForWork = useMemo(() => {
+    const workAccs = budgetAccounts.filter((a) => a.work_id === currentWorkId);
+    if (workAccs.length > 0) {
+      return workAccs.reduce((s, a) => s + Number(a.total_amount || 0), 0);
+    }
+    if (currentWorkId === 'work-1') return ATRIUM_BASE_TOTALS.totalBudget;
+    return Number(currentWork?.pco_budget_total || currentWork?.contract_value || 0);
+  }, [currentWorkId, budgetAccounts, currentWork]);
+
+  // Versões de Orçamento Criadas por Obra
+  const [customRevisionsByWork, setCustomRevisionsByWork] = useState<
+    Record<string, BudgetRevisionData[]>
+  >({});
+
+  const budgetVersionsList = useMemo<BudgetRevisionData[]>(() => {
+    const baseVer: BudgetRevisionData = {
       versionCode: 'REV-00',
-      title: 'Orçamento Inicial de Implantação (Aba BASE ORÇAMENTO)',
-      notes: 'Implantação base aprovada com 298 subetapas e 23 grupos macro.',
-      createdAt: '2024-01-15T10:00:00.000Z',
-      author: 'Engenharia de Custos / Tiago Caetano',
+      title: `Orçamento Inicial de Implantação — ${currentWork?.name || 'Obra'} (BASE ORÇAMENTO)`,
+      notes:
+        currentWorkId === 'work-1'
+          ? 'Implantação base aprovada com 298 subetapas e 23 grupos macro.'
+          : `Orçamento base cadastrado/importado para ${currentWork?.name || 'Obra'}.`,
+      createdAt: currentWork?.created_at || '2025-02-01T10:00:00.000Z',
+      author: `Engenharia de Custos / ${currentWork?.engineer_name || 'Tiago Caetano'}`,
       inccPercent: 0,
       inccAppliedOnlyNewVersion: true,
       updateOnlyPendingStages: true,
-      totalBudgetOriginal: ATRIUM_BASE_TOTALS.totalBudget,
-      totalBudgetRevised: ATRIUM_BASE_TOTALS.totalBudget,
+      totalBudgetOriginal: baseTotalForWork,
+      totalBudgetRevised: baseTotalForWork,
       items: [],
       justifications: {},
-    },
-  ]);
+    };
+    const custom = customRevisionsByWork[currentWorkId] || [];
+    return [...custom, baseVer];
+  }, [currentWorkId, currentWork, baseTotalForWork, customRevisionsByWork]);
 
   const [selectedVersionCode, setSelectedVersionCode] = useState<string>('REV-00');
 
   const handleSaveNewVersion = (newVer: BudgetRevisionData) => {
-    setBudgetVersionsList((prev) => [newVer, ...prev]);
+    setCustomRevisionsByWork((prev) => ({
+      ...prev,
+      [currentWorkId]: [newVer, ...(prev[currentWorkId] || [])],
+    }));
     setSelectedVersionCode(newVer.versionCode);
     alert(
-      `Nova versão ${newVer.versionCode} criada com sucesso!\nTotal Orçado: ${formatBRL(
+      `Nova versão ${newVer.versionCode} criada com sucesso para ${currentWork?.name}!\nTotal Orçado: ${formatBRL(
         newVer.totalBudgetRevised
       )}\nReajuste INCC: ${newVer.inccPercent}%`
     );
@@ -80,32 +96,58 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) 
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Barra Superior de Identificação e Ações */}
-      <div className="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Barra Superior de Identificação, Seletor de Obra e Ações */}
+      <div className="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#004171] text-white">
               Engenharia & Custos
             </span>
             <span className="text-xs text-slate-500">•</span>
-            <span className="text-xs text-slate-400">Edifício Atrium</span>
+            <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">
+              {currentWork?.code} — {currentWork?.name}
+            </span>
           </div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
             Orçamento da Obra & Gestão de Versões (INCC)
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-3xl">
-            Acompanhamento técnico do orçamento baseado na aba <strong>BASE ORÇAMENTO</strong> (298 subetapas,
-            23 etapas), revisões periódicas pelo índice <strong>INCC</strong> e mapeamento de contas <strong>De-Para</strong>.
+            Acompanhamento técnico do orçamento baseado no modelo <strong>BASE ORÇAMENTO / PCO</strong>,
+            revisões periódicas pelo índice <strong>INCC</strong> e sincronização por obra no Supabase.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Seletor de Obra */}
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2">
+            <Building2 className="w-4 h-4 text-sky-500 shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase font-bold text-slate-400 leading-none">
+                Obra Selecionada
+              </span>
+              <select
+                value={currentWorkId}
+                onChange={(e) => {
+                  setCurrentWorkId(e.target.value);
+                  setSelectedVersionCode('REV-00');
+                }}
+                className="bg-transparent text-xs font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer pr-2 mt-0.5"
+              >
+                {works.map((w) => (
+                  <option key={w.id} value={w.id} className="bg-white dark:bg-slate-900">
+                    {w.code} — {w.name} ({w.city_state})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <button
             onClick={() => setShowImportModal(true)}
             className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center space-x-1.5"
           >
             <UploadCloud className="w-4 h-4" />
-            <span>Importar Planilha ERP (.xlsx)</span>
+            <span>Importar Orçamento / PCO (.xlsx)</span>
           </button>
 
           <button
@@ -129,7 +171,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) 
           }`}
         >
           <Layers className="w-4 h-4 text-sky-400" />
-          <span>1. Orçamento da Obra (BASE ORÇAMENTO)</span>
+          <span>1. Orçamento da Obra (BASE ORÇAMENTO — {currentWork?.name})</span>
         </button>
 
         <button
@@ -147,7 +189,12 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) 
 
       {/* ABA 1: BASE ORÇAMENTO */}
       {activeTab === 'base_orcamento' && (
-        <BaseOrcamentoTable onOpenNewVersion={() => setShowRevisionModal(true)} />
+        <BaseOrcamentoTable
+          workId={currentWorkId}
+          workName={currentWork?.name || 'Obra'}
+          onOpenNewVersion={() => setShowRevisionModal(true)}
+          onOpenImport={() => setShowImportModal(true)}
+        />
       )}
 
       {/* ABA 2: ORÇAMENTO & INCC */}
@@ -177,7 +224,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) 
               <div className="flex items-center space-x-3">
                 <div className="text-right">
                   <span className="text-[10px] text-slate-500 uppercase font-semibold block">
-                    Valor Total do Orçamento
+                    Valor Total do Orçamento ({currentWork?.name})
                   </span>
                   <div className="text-xl font-black text-slate-900 dark:text-white font-mono">
                     {formatBRL(activeVersionObj.totalBudgetRevised)}
@@ -203,7 +250,7 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) 
           <div className="glass-card p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
             <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
               <History className="w-4 h-4 text-[#004171] dark:text-sky-400" />
-              <span>Histórico de Versões e Justificativas de Alteração</span>
+              <span>Histórico de Versões e Justificativas de Alteração ({currentWork?.name})</span>
             </h4>
 
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
@@ -298,6 +345,13 @@ export const BudgetManager: React.FC<BudgetManagerProps> = ({ selectedWorkId }) 
           </div>
         </div>
       )}
+
+      {/* Modal Importador Universal de Orçamento / PCO por Obra */}
+      <PcoImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        targetWork={currentWork}
+      />
 
       {/* Modal Nova Revisão / INCC */}
       <BudgetRevisionModal

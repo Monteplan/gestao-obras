@@ -31,6 +31,7 @@ import {
   saveNewDeParaToSupabase,
   detectWorkFromRows,
 } from '../../lib/erp-unified-importer';
+import { toSupabaseWorkUuid, saveWorkToSupabase } from '../../lib/supabase-sync';
 import { ATRIUM_DEPARA_RULES } from '../../lib/atrium-real-data';
 
 export const ErpImporterPage: React.FC = () => {
@@ -349,8 +350,13 @@ export const ErpImporterPage: React.FC = () => {
     setIsProcessing(true);
 
     if (importType === 'unified_erp_ledger') {
+      // Garante que a obra de destino exista em public.works antes de inserir lançamentos
+      const targetWorkObj = works.find((w) => w.id === targetWorkId);
+      if (targetWorkObj) {
+        await saveWorkToSupabase(targetWorkObj);
+      }
       // Motor Especializado Unificado ERP com sincronização no Supabase
-      const supabaseWorkId = targetWorkId === 'work-1' ? 'a0000000-0000-0000-0000-000000000001' : targetWorkId;
+      const supabaseWorkId = toSupabaseWorkUuid(targetWorkId);
       const result = await executeUnifiedErpImport(
         file.name,
         parsedRows,

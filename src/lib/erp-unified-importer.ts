@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured, logAudit } from './supabase';
+import { toSupabaseWorkUuid } from './supabase-sync';
 import { ATRIUM_DEPARA_RULES, findDeParaRule, DeParaRule } from './atrium-real-data';
 import type { UnmappedAccountItem, IncurredCost, Revenue, ErpImportBatch, DeduplicationStrategy } from '../types';
 
@@ -301,7 +302,7 @@ export async function executeUnifiedErpImport(
   customRules: DeParaRule[] = [],
   strategy: DeduplicationStrategy = 'update_existing',
   workId: string = 'work-1',
-  supabaseWorkId: string = 'a0000000-0000-0000-0000-000000000001'
+  supabaseWorkId?: string
 ): Promise<{
   success: boolean;
   totalRows: number;
@@ -316,9 +317,10 @@ export async function executeUnifiedErpImport(
   error?: string;
 }> {
   const batchId = 'batch-erp-unified-' + Date.now();
+  const resolvedSupabaseWorkId = supabaseWorkId || toSupabaseWorkUuid(workId);
 
   try {
-    // 1. Busca chaves de deduplicação existentes no Supabase
+    // 1. Busca chaves de deduplicação existentes no Supabase para a obra selecionada
     const existingDbKeys = new Set<string>();
     if (isSupabaseConfigured() && supabase) {
       let page = 0;
@@ -328,6 +330,7 @@ export async function executeUnifiedErpImport(
         const { data, error } = await supabase
           .from('actual_financial_entries')
           .select('document_number, entry_date, amount, cost_account_name')
+          .eq('work_id', resolvedSupabaseWorkId)
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (error || !data || data.length === 0) break;
@@ -391,7 +394,7 @@ export async function executeUnifiedErpImport(
       // Objeto mestre para actual_financial_entries no Supabase
       if (!existsInDb) {
         entriesToInsertInDb.push({
-          work_id: supabaseWorkId || workId,
+          work_id: resolvedSupabaseWorkId,
           source_batch_id: 'b0000000-0000-0000-0000-000000000001',
           external_entry_id: `erp_${Date.now()}_${idx + 1}`,
           company_unit: sanitized.unidade || null,

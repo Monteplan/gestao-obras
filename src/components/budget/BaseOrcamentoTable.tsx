@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
-  ATRIUM_BASE_ORCAMENTO_ITEMS,
   ATRIUM_BASE_ORCAMENTO_GROUPS,
-  ATRIUM_BASE_TOTALS,
   BaseBudgetItem,
+  BaseBudgetGroup,
 } from '../../lib/atrium-base-orcamento';
+import { useData } from '../../contexts/DataContext';
 import { formatBRL } from '../../lib/utils';
 import {
   Search,
@@ -12,36 +12,167 @@ import {
   Layers,
   ChevronDown,
   ChevronRight,
-  HardHat,
-  Package,
   CheckCircle2,
-  Calendar,
-  DollarSign,
   TrendingUp,
+  UploadCloud,
 } from 'lucide-react';
 
 interface BaseOrcamentoTableProps {
+  workId?: string;
+  workName?: string;
   onOpenNewVersion?: () => void;
+  onOpenImport?: () => void;
   readOnly?: boolean;
 }
 
 export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
+  workId = 'work-1',
+  workName = 'Atrium Select',
   onOpenNewVersion,
+  onOpenImport,
   readOnly = false,
 }) => {
+  const { budgetAccounts, budgetItems, stages } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string>('todos');
   const [selectedType, setSelectedType] = useState<string>('todos');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-  // Expand all by default
-  useState(() => {
+  // Constrói os grupos de orçamento dinamicamente para a obra selecionada
+  const activeGroups: BaseBudgetGroup[] = useMemo(() => {
+    const isAtrium = workId === 'work-1';
+    const workAccounts = budgetAccounts.filter((a) => a.work_id === workId);
+
+    // Para o Atrium (work-1), se não houver importação customizada substituindo as 298 contas, usa os grupos oficiais
+    if (isAtrium && workAccounts.length === 0) {
+      return ATRIUM_BASE_ORCAMENTO_GROUPS;
+    }
+
+    // Se a obra tiver contas em budgetAccounts (vindas do Supabase ou de importação PCO)
+    if (workAccounts.length > 0 && (!isAtrium || workAccounts.some((a) => a.id.startsWith('ba-work-1-')))) {
+      const groupMap = new Map<string, BaseBudgetItem[]>();
+      workAccounts.forEach((acc, idx) => {
+        const gName = acc.group_etapa || 'ORÇAMENTO GERAL';
+        if (!groupMap.has(gName)) groupMap.set(gName, []);
+        const val = Number(acc.total_amount || 0);
+        const expType = (acc.expense_type || 'MATERIAL').toUpperCase();
+        groupMap.get(gName)!.push({
+          id: acc.id || `item-${workId}-${idx}`,
+          code: acc.code || acc.account_code || `${String(idx + 1).padStart(2, '0')}.01`,
+          substageName: acc.description,
+          erpAccount: acc.erp_account || 'Custo de Obra',
+          unit: acc.unit || 'VB',
+          quantity: Number(acc.quantity || 1),
+          maoAmount: expType.includes('MÃO') || expType.includes('MAO') ? val : 0,
+          matAmount: expType.includes('MÃO') || expType.includes('MAO') ? 0 : val,
+          totalAmount: val,
+          budgetAmount: val,
+          stageGroup: gName,
+          expenseType: expType,
+          measuredPercent: acc.progress_actual ?? 0,
+          measuredAmount: (val * (acc.progress_actual ?? 0)) / 100,
+        });
+      });
+
+      return Array.from(groupMap.entries()).map(([name, items], gIdx) => {
+        const totalMat = items.reduce((s, i) => s + i.matAmount, 0);
+        const totalMao = items.reduce((s, i) => s + i.maoAmount, 0);
+        const totalBudget = items.reduce((s, i) => s + i.budgetAmount, 0);
+        return {
+          name,
+          code: `${String(gIdx + 1).padStart(2, '0')}.00`,
+          itemsCount: items.length,
+          totalMat,
+          totalMao,
+          totalBudget,
+          items,
+        };
+      });
+    }
+
+    if (isAtrium) {
+      return ATRIUM_BASE_ORCAMENTO_GROUPS;
+    }
+
+    // Fallback para obras que ainda não importaram planilha PCO completa mas possuem budgetItems ou stages
+    const workBudgetItems = budgetItems.filter((b) => b.work_id === workId);
+    const workStages = stages.filter((s) => s.work_id === workId);
+
+    if (workBudgetItems.length > 0) {
+      const groupMap = new Map<string, BaseBudgetItem[]>();
+      workBudgetItems.forEach((bi, idx) => {
+        const st = workStages.find((s) => s.id === bi.stage_id);
+        const gName = st?.name || (bi.cost_group || 'ETAPA GERAL').toUpperCase();
+        if (!groupMap.has(gName)) groupMap.set(gName, []);
+        const val = Number(bi.total_planned || 0);
+        const isMao = bi.cost_group === 'mao_de_obra' || bi.cost_group === 'empreiteiro';
+        groupMap.get(gName)!.push({
+          id: bi.id || `bi-${workId}-${idx}`,
+          code: st?.code ? `${st.code}.${idx + 1}` : `${String(idx + 1).padStart(2, '0')}.01`,
+          substageName: bi.description,
+          erpAccount: bi.cost_center || 'Custo de Obra',
+          unit: bi.unit || 'VB',
+          quantity: Number(bi.quantity_planned || 1),
+          maoAmount: isMao ? val : 0,
+          matAmount: isMao ? 0 : val,
+          totalAmount: val,
+          budgetAmount: val,
+          stageGroup: gName,
+          expenseType: isMao ? 'MÃO DE OBRA' : 'MATERIAL',
+        });
+      });
+
+      return Array.from(groupMap.entries()).map(([name, items], gIdx) => ({
+        name,
+        code: `${String(gIdx + 1).padStart(2, '0')}.00`,
+        itemsCount: items.length,
+        totalMat: items.reduce((s, i) => s + i.matAmount, 0),
+        totalMao: items.reduce((s, i) => s + i.maoAmount, 0),
+        totalBudget: items.reduce((s, i) => s + i.budgetAmount, 0),
+        items,
+      }));
+    }
+
+    if (workStages.length > 0) {
+      return workStages.map((st, idx) => {
+        const val = Number(st.budget_planned || 0);
+        const item: BaseBudgetItem = {
+          id: st.id,
+          code: st.code || `${String(idx + 1).padStart(2, '0')}.01`,
+          substageName: st.name,
+          erpAccount: 'Custo de Obra',
+          unit: 'VB',
+          quantity: 1,
+          maoAmount: 0,
+          matAmount: val,
+          totalAmount: val,
+          budgetAmount: val,
+          stageGroup: st.name,
+          expenseType: 'MATERIAL',
+        };
+        return {
+          name: st.name,
+          code: st.code || `${String(idx + 1).padStart(2, '0')}.00`,
+          itemsCount: 1,
+          totalMat: val,
+          totalMao: 0,
+          totalBudget: val,
+          items: [item],
+        };
+      });
+    }
+
+    return [];
+  }, [workId, budgetAccounts, budgetItems, stages]);
+
+  useEffect(() => {
+    setSelectedGroup('todos');
     const init: Record<string, boolean> = {};
-    ATRIUM_BASE_ORCAMENTO_GROUPS.forEach((g) => {
+    activeGroups.forEach((g) => {
       init[g.name] = true;
     });
     setExpandedGroups(init);
-  });
+  }, [workId, activeGroups]);
 
   const toggleGroup = (groupName: string) => {
     setExpandedGroups((prev) => ({
@@ -52,7 +183,7 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
 
   const expandAll = () => {
     const all: Record<string, boolean> = {};
-    ATRIUM_BASE_ORCAMENTO_GROUPS.forEach((g) => {
+    activeGroups.forEach((g) => {
       all[g.name] = true;
     });
     setExpandedGroups(all);
@@ -64,46 +195,52 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
 
   // Filtered items
   const filteredGroups = useMemo(() => {
-    return ATRIUM_BASE_ORCAMENTO_GROUPS.map((group) => {
-      if (selectedGroup !== 'todos' && group.name !== selectedGroup) {
-        return null;
-      }
+    return activeGroups
+      .map((group) => {
+        if (selectedGroup !== 'todos' && group.name !== selectedGroup) {
+          return null;
+        }
 
-      const matchingItems = group.items.filter((item) => {
-        const matchesSearch =
-          item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.substageName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.erpAccount.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.stageGroup.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchingItems = group.items.filter((item) => {
+          const matchesSearch =
+            item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.substageName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.erpAccount.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.stageGroup.toLowerCase().includes(searchTerm.toLowerCase());
 
-        const matchesType =
-          selectedType === 'todos' ||
-          item.expenseType.toUpperCase() === selectedType.toUpperCase();
+          const matchesType =
+            selectedType === 'todos' ||
+            item.expenseType.toUpperCase() === selectedType.toUpperCase();
 
-        return matchesSearch && matchesType;
-      });
+          return matchesSearch && matchesType;
+        });
 
-      if (matchingItems.length === 0 && (searchTerm || selectedType !== 'todos')) {
-        return null;
-      }
+        if (matchingItems.length === 0 && (searchTerm || selectedType !== 'todos')) {
+          return null;
+        }
 
-      return {
-        ...group,
-        items: matchingItems,
-        totalBudgetFiltered: matchingItems.reduce((acc, it) => acc + it.budgetAmount, 0),
-        totalMatFiltered: matchingItems.reduce((acc, it) => acc + it.matAmount, 0),
-        totalMaoFiltered: matchingItems.reduce((acc, it) => acc + it.maoAmount, 0),
-      };
-    }).filter(Boolean) as (typeof ATRIUM_BASE_ORCAMENTO_GROUPS[0] & {
+        return {
+          ...group,
+          items: matchingItems,
+          totalBudgetFiltered: matchingItems.reduce((acc, it) => acc + it.budgetAmount, 0),
+          totalMatFiltered: matchingItems.reduce((acc, it) => acc + it.matAmount, 0),
+          totalMaoFiltered: matchingItems.reduce((acc, it) => acc + it.maoAmount, 0),
+        };
+      })
+      .filter(Boolean) as (BaseBudgetGroup & {
       totalBudgetFiltered: number;
       totalMatFiltered: number;
       totalMaoFiltered: number;
     })[];
-  }, [searchTerm, selectedGroup, selectedType]);
+  }, [activeGroups, searchTerm, selectedGroup, selectedType]);
 
   const currentTotalBudget = filteredGroups.reduce((acc, g) => acc + g.totalBudgetFiltered, 0);
-  const currentTotalMat = filteredGroups.reduce((acc, g) => acc + g.totalMatFiltered, 0);
-  const currentTotalMao = filteredGroups.reduce((acc, g) => acc + g.totalMaoFiltered, 0);
+  const totalItemsCount = activeGroups.reduce((acc, g) => acc + g.items.length, 0);
+  const distinctErpAccountsCount = useMemo(() => {
+    const set = new Set<string>();
+    activeGroups.forEach((g) => g.items.forEach((it) => it.erpAccount && set.add(it.erpAccount)));
+    return set.size;
+  }, [activeGroups]);
 
   return (
     <div className="space-y-4">
@@ -111,37 +248,47 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
       <div className="bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
         <div>
           <span className="font-bold text-sky-900 dark:text-sky-300 block">
-            Base Orçamentária Inicial (Aba BASE ORÇAMENTO - PCO Oficial)
+            Base Orçamentária Inicial ({workName} — Modelo BASE ORÇAMENTO / PCO)
           </span>
           <p className="text-slate-600 dark:text-slate-400 mt-0.5">
-            Contém todas as <strong>{ATRIUM_BASE_TOTALS.totalItems} subetapas</strong> e{' '}
-            <strong>{ATRIUM_BASE_TOTALS.totalGroups} etapas macro</strong> do projeto Atrium. Subetapas
-            estão discriminadas em linhas separadas para <strong>MATERIAL</strong> e{' '}
-            <strong>MÃO DE OBRA</strong> com vínculo à conta do ERP.
+            Contém <strong>{totalItemsCount} subetapas</strong> e{' '}
+            <strong>{activeGroups.length} etapas macro</strong> de <strong>{workName}</strong>, com
+            vínculo direto às contas do ERP e acompanhamento físico-financeiro.
           </p>
         </div>
-        {onOpenNewVersion && !readOnly && (
-          <button
-            onClick={onOpenNewVersion}
-            className="self-start md:self-auto px-4 py-2 rounded-xl bg-[#004171] hover:bg-[#0a548c] text-white font-bold text-xs shadow-md shadow-[#004171]/20 transition-all flex items-center space-x-1.5 whitespace-nowrap"
-          >
-            <TrendingUp className="w-3.5 h-3.5 text-sky-300" />
-            <span>Criar Nova Versão / Revisão INCC</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          {onOpenImport && !readOnly && (
+            <button
+              onClick={onOpenImport}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center space-x-1.5 whitespace-nowrap"
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              <span>Importar Orçamento (.xlsx)</span>
+            </button>
+          )}
+          {onOpenNewVersion && !readOnly && (
+            <button
+              onClick={onOpenNewVersion}
+              className="px-4 py-2 rounded-xl bg-[#004171] hover:bg-[#0a548c] text-white font-bold text-xs shadow-md shadow-[#004171]/20 transition-all flex items-center space-x-1.5 whitespace-nowrap"
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-sky-300" />
+              <span>Criar Nova Versão / Revisão INCC</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Cards de Resumo Rápido */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800">
           <span className="text-[10px] text-slate-500 uppercase font-semibold block">
-            Orçamento Total da Obra
+            Orçamento Total ({workName})
           </span>
           <div className="text-lg font-bold text-slate-900 dark:text-white mt-1">
             {formatBRL(currentTotalBudget)}
           </div>
           <span className="text-[10px] text-slate-500 block mt-0.5">
-            {filteredGroups.length} etapas ({ATRIUM_BASE_TOTALS.totalItems} subetapas)
+            {filteredGroups.length} etapas ({totalItemsCount} subetapas)
           </span>
         </div>
 
@@ -151,7 +298,7 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
             <span>Contas Mapeadas no ERP (DRE)</span>
           </span>
           <div className="text-lg font-bold text-sky-700 dark:text-sky-400 mt-1">
-            47 Contas Conciliadas
+            {distinctErpAccountsCount} Contas Conciliadas
           </div>
           <span className="text-[10px] text-slate-500 block mt-0.5">
             100% integradas à DRE e ao Realizado
@@ -164,10 +311,10 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
             <span>Mapeamento De-Para Oficial</span>
           </span>
           <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400 mt-1">
-            {ATRIUM_BASE_TOTALS.totalItems} Subetapas Vinculadas
+            {totalItemsCount} Subetapas Vinculadas
           </div>
           <span className="text-[10px] text-slate-500 block mt-0.5">
-            Conforme planilha oficial DE-PARA3.xlsx
+            Sincronizado com Supabase Cloud ({workId})
           </span>
         </div>
       </div>
@@ -193,8 +340,10 @@ export const BaseOrcamentoTable: React.FC<BaseOrcamentoTableProps> = ({
               onChange={(e) => setSelectedGroup(e.target.value)}
               className="bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer text-[11px]"
             >
-              <option value="todos" className="bg-white dark:bg-slate-900">Todas as Etapas ({ATRIUM_BASE_ORCAMENTO_GROUPS.length})</option>
-              {ATRIUM_BASE_ORCAMENTO_GROUPS.map((g) => (
+              <option value="todos" className="bg-white dark:bg-slate-900">
+                Todas as Etapas ({activeGroups.length})
+              </option>
+              {activeGroups.map((g) => (
                 <option key={g.name} value={g.name} className="bg-white dark:bg-slate-900">
                   {g.name}
                 </option>

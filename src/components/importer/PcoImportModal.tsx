@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Upload,
@@ -48,6 +48,13 @@ export const PcoImportModal: React.FC<PcoImportModalProps> = ({
   const [validationResult, setValidationResult] = useState<PcoValidationResult | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen && targetWork?.id) {
+      setSelectedWorkId(targetWork.id);
+      setStep(1);
+    }
+  }, [isOpen, targetWork?.id]);
 
   if (!isOpen) return null;
 

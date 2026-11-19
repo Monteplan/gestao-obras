@@ -204,8 +204,15 @@ export const INITIAL_UNIFIED_ROWS: UnifiedCommercialErpRow[] = seedRows as Unifi
 export const ATRIUM_COMMERCIAL_UNITS: CommercialUnit[] =
   buildCommercialUnitsFromUnifiedRows(INITIAL_UNIFIED_ROWS);
 
+export function getCommercialStorageKey(workId: string = 'work-1'): string {
+  return workId === 'work-1'
+    ? COMMERCIAL_UNITS_STORAGE_KEY
+    : `${COMMERCIAL_UNITS_STORAGE_KEY}_${workId}`;
+}
+
 export function calculateCommercialSummary(
-  units: CommercialUnit[] = ATRIUM_COMMERCIAL_UNITS
+  units: CommercialUnit[] = ATRIUM_COMMERCIAL_UNITS,
+  customVgvOrcado?: number
 ): CommercialOverviewSummary {
   const totalUnits = units.length;
   const soldUnitsList = units.filter((u) => u.status === 'vendida');
@@ -225,7 +232,6 @@ export function calculateCommercialSummary(
   const availablePrivateAreaM2 = availableUnitsList.reduce((acc, u) => acc + u.privateAreaM2, 0);
   const blockedPrivateAreaM2 = blockedUnitsList.reduce((acc, u) => acc + u.privateAreaM2, 0);
 
-  const vgvOrcado = 55206000.0;
   const vgvVendido = soldUnitsList.reduce((acc, u) => acc + u.unitValue, 0);
   const vgvEstoqueDisponivel = availableUnitsList.reduce((acc, u) => acc + u.unitValue, 0);
   const vgvEstoqueBloqueado = blockedUnitsList.reduce((acc, u) => acc + u.unitValue, 0);
@@ -233,6 +239,7 @@ export function calculateCommercialSummary(
 
   // VGV Real = Vendido + Estoque
   const vgvReal = vgvVendido + vgvEstoqueTotal;
+  const vgvOrcado = customVgvOrcado !== undefined && customVgvOrcado > 0 ? customVgvOrcado : 55206000.0;
 
   // Preço Médio m² Vendido = Valor Vendido ÷ Metragem Vendida
   const averagePriceM2Vendido = soldPrivateAreaM2 > 0 ? vgvVendido / soldPrivateAreaM2 : 11406.2;
@@ -318,7 +325,8 @@ export async function parseVendasGeralExcelFile(file: File): Promise<UnifiedComm
  * Grava as unidades do relatório unificado vendasgeral.xlsx na tabela public.commercial_units do Supabase
  */
 export async function syncUnifiedCommercialToSupabase(
-  rows: UnifiedCommercialErpRow[]
+  rows: UnifiedCommercialErpRow[],
+  workId: string = 'work-1'
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isSupabaseConfigured() || !supabase) {
     return { ok: false, error: 'Supabase não configurado.' };
@@ -326,7 +334,7 @@ export async function syncUnifiedCommercialToSupabase(
 
   try {
     const dbRows = rows.map((u) => ({
-      work_id: 'work-1',
+      work_id: workId,
       de_emp: u.de_emp,
       de_uni: u.de_uni,
       unit_number: u.unit_number,
@@ -349,9 +357,17 @@ export async function syncUnifiedCommercialToSupabase(
       updated_at: new Date().toISOString(),
     }));
 
-    const { error } = await supabase
+    // Tenta upsert pela chave composta (work_id, unit_number); se ainda estiver com constraint antiga, faz fallback
+    let { error } = await supabase
       .from('commercial_units')
-      .upsert(dbRows, { onConflict: 'unit_number' });
+      .upsert(dbRows, { onConflict: 'work_id,unit_number' });
+
+    if (error) {
+      const fallback = await supabase
+        .from('commercial_units')
+        .upsert(dbRows, { onConflict: 'unit_number' });
+      error = fallback.error;
+    }
 
     if (error) {
       return { ok: false, error: error.message };
@@ -360,8 +376,8 @@ export async function syncUnifiedCommercialToSupabase(
     logAudit(
       'IMPORT_VENDAS_GERAL',
       'commercial_units',
-      'work-1',
-      `Relatório Geral de Vendas importado (${rows.length} unidades)`
+      workId,
+      `Relatório Geral de Vendas importado para ${workId} (${rows.length} unidades)`
     );
     return { ok: true };
   } catch (err: any) {
@@ -370,15 +386,18 @@ export async function syncUnifiedCommercialToSupabase(
 }
 
 /**
- * Carrega os dados da tabela public.commercial_units do Supabase
+ * Carrega os dados da tabela public.commercial_units do Supabase para a obra informada
  */
-export async function fetchCommercialDataFromSupabase(): Promise<CommercialUnit[] | null> {
+export async function fetchCommercialDataFromSupabase(
+  workId: string = 'work-1'
+): Promise<CommercialUnit[] | null> {
   if (!isSupabaseConfigured() || !supabase) return null;
 
   try {
     const { data, error } = await supabase
       .from('commercial_units')
       .select('*')
+      .eq('work_id', workId)
       .order('floor', { ascending: true })
       .order('unit_number', { ascending: true });
 

@@ -4,9 +4,10 @@ import {
   calculateCommercialSummary,
   CommercialUnit,
   CommercialUnitStatus,
-  COMMERCIAL_UNITS_STORAGE_KEY,
+  getCommercialStorageKey,
   fetchCommercialDataFromSupabase,
 } from '../../lib/atrium-commercial-data';
+import { useData } from '../../contexts/DataContext';
 import { formatBRL, formatPercent, formatDateBR } from '../../lib/utils';
 import { CommercialImportModal } from './CommercialImportModal';
 import {
@@ -26,12 +27,19 @@ import {
 } from 'lucide-react';
 
 export const CommercialPage: React.FC = () => {
-  // Estado das unidades (carregado com dados reais de vendasgeral.xlsx)
+  const { works } = useData();
+  const [selectedWorkId, setSelectedWorkId] = useState<string>(works[0]?.id || 'work-1');
+  const currentWork = useMemo(
+    () => works.find((w) => w.id === selectedWorkId) || works[0],
+    [works, selectedWorkId]
+  );
+
+  // Estado das unidades para a obra selecionada
   const [units, setUnits] = useState<CommercialUnit[]>(() => {
     try {
       localStorage.removeItem('atrium_custom_commercial_units');
       localStorage.removeItem('atrium_real_commercial_units_v2');
-      const saved = localStorage.getItem(COMMERCIAL_UNITS_STORAGE_KEY);
+      const saved = localStorage.getItem(getCommercialStorageKey('work-1'));
       if (saved) return JSON.parse(saved);
     } catch {}
     return ATRIUM_COMMERCIAL_UNITS;
@@ -44,24 +52,39 @@ export const CommercialPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'table' | 'tower'>('table');
   const [selectedUnit, setSelectedUnit] = useState<CommercialUnit | null>(null);
 
-  // Sincroniza automaticamente com a tabela commercial_units do Supabase
+  // Sincroniza automaticamente com a tabela commercial_units do Supabase ao trocar de obra
   useEffect(() => {
     let active = true;
-    fetchCommercialDataFromSupabase().then((remoteUnits) => {
+    const storageKey = getCommercialStorageKey(selectedWorkId);
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        setUnits(JSON.parse(saved));
+      } else {
+        setUnits(selectedWorkId === 'work-1' ? ATRIUM_COMMERCIAL_UNITS : []);
+      }
+    } catch {
+      setUnits(selectedWorkId === 'work-1' ? ATRIUM_COMMERCIAL_UNITS : []);
+    }
+
+    fetchCommercialDataFromSupabase(selectedWorkId).then((remoteUnits) => {
       if (active && remoteUnits && remoteUnits.length > 0) {
         setUnits(remoteUnits);
         try {
-          localStorage.setItem(COMMERCIAL_UNITS_STORAGE_KEY, JSON.stringify(remoteUnits));
+          localStorage.setItem(storageKey, JSON.stringify(remoteUnits));
         } catch {}
       }
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [selectedWorkId]);
 
   // Cálculos consolidados
-  const summary = useMemo(() => calculateCommercialSummary(units), [units]);
+  const summary = useMemo(
+    () => calculateCommercialSummary(units, currentWork?.vgv_total),
+    [units, currentWork?.vgv_total]
+  );
 
   // Filtragem da lista
   const filteredUnits = useMemo(() => {
@@ -143,12 +166,14 @@ export const CommercialPage: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-300">
-      {/* Header do Módulo Comercial */}
-      <div className="glass-card p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-gradient-to-r from-blue-900/20 via-sky-900/10 to-transparent flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Header do Módulo Comercial com Seletor de Obra */}
+      <div className="glass-card p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-gradient-to-r from-blue-900/20 via-sky-900/10 to-transparent flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2 text-xs font-bold text-blue-500 uppercase tracking-wider mb-1">
             <Building2 className="w-4 h-4" />
-            <span>Módulo Comercial & Vendas • Edifício Atrium Select</span>
+            <span>
+              Módulo Comercial & Vendas • {currentWork?.code} — {currentWork?.name}
+            </span>
           </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
             Gestão Comercial, Vendas Incorridas & Carteira de Recebíveis
@@ -156,6 +181,30 @@ export const CommercialPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Seletor de Obra */}
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5">
+            <Building2 className="w-4 h-4 text-sky-500 shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase font-bold text-slate-400 leading-none">
+                Obra Selecionada
+              </span>
+              <select
+                value={selectedWorkId}
+                onChange={(e) => {
+                  setSelectedWorkId(e.target.value);
+                  setSelectedUnit(null);
+                }}
+                className="bg-transparent text-xs font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer pr-2 mt-0.5"
+              >
+                {works.map((w) => (
+                  <option key={w.id} value={w.id} className="bg-white dark:bg-slate-900">
+                    {w.code} — {w.name} ({w.city_state})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <button
             onClick={() => setShowImportModal(true)}
             className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#004171] hover:bg-[#0a548c] text-white flex items-center space-x-1.5 transition-all shadow-md"
@@ -894,6 +943,8 @@ export const CommercialPage: React.FC = () => {
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
         onImportSuccess={(updated) => setUnits(updated)}
+        workId={selectedWorkId}
+        workName={currentWork?.name || 'Obra'}
       />
     </div>
   );

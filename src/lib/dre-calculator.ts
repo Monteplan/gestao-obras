@@ -101,21 +101,24 @@ export function computeDynamicDre(
   totalRevenues: number;
   globalProgressPercent: number;
 } {
-  // Filtra para a obra ativa (ou work-1 por compatibilidade)
-  const workCosts = incurredCosts.filter(
-    (c) => !c.work_id || c.work_id === workId || c.work_id === 'work-1'
+  // Filtra estritamente para a obra ativa (work-1 aceita registros legados sem work_id)
+  const isAtrium = !workId || workId === 'work-1';
+  const workCosts = incurredCosts.filter((c) =>
+    isAtrium ? !c.work_id || c.work_id === 'work-1' : c.work_id === workId
   );
-  const workRevenues = revenues.filter(
-    (r) => !r.work_id || r.work_id === workId || r.work_id === 'work-1'
+  const workRevenues = revenues.filter((r) =>
+    isAtrium ? !r.work_id || r.work_id === 'work-1' : r.work_id === workId
   );
 
   // Determina as etapas ativas e calcula o avanço físico ponderado da obra
   const effectiveStages =
     stages && stages.length > 0
-      ? stages.filter((s) => !s.work_id || s.work_id === workId || s.work_id === 'work-1')
-      : ATRIUM_PCO_STAGES;
+      ? stages.filter((s) => (isAtrium ? !s.work_id || s.work_id === 'work-1' : s.work_id === workId))
+      : isAtrium
+      ? ATRIUM_PCO_STAGES
+      : [];
 
-  const globalProgress = calculateWeightedProgress(effectiveStages) || 46.22;
+  const globalProgress = calculateWeightedProgress(effectiveStages) || (isAtrium ? 46.22 : 0);
 
   // Mapa de avanço medido das etapas
   const stageProgressMap = new Map<string, number>();

@@ -445,7 +445,16 @@ export interface SystemAuditLog {
 // ==============================================================================
 
 export type BudgetAccountType = 'grupo' | 'etapa' | 'subetapa' | 'atividade';
-export type BudgetAccountStatus = 'nao_iniciada' | 'em_andamento' | 'concluida' | 'atrasada' | 'bloqueada' | 'descontinuada' | 'ativo' | 'inativo';
+export type BudgetAccountStatus =
+  | 'nao_iniciada'
+  | 'em_andamento'
+  | 'concluida'
+  | 'atrasada'
+  | 'bloqueada'
+  | 'descontinuada'
+  | 'ativo'
+  | 'inativo'
+  | 'aprovado';
 
 export interface BudgetAccount {
   id: string;
@@ -458,6 +467,10 @@ export interface BudgetAccount {
   code: string; // Ex: '01', '01.01', '02.09'
   account_code?: string; // alias
   description: string;
+  group_etapa?: string;
+  cost_type?: 'direto' | 'indireto';
+  erp_account?: string;
+  expense_type?: string;
   account_type: BudgetAccountType;
   display_order: number;
   order_index?: number; // alias

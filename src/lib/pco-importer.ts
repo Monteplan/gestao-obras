@@ -129,7 +129,19 @@ export function classifyFinancialNature(
 /**
  * Lê e estrutura a aba PLANEJAMENTO MACRO
  */
-export function parsePlanejamentoMacro(sheet: XLSX.WorkSheet) {
+export function parsePlanejamentoMacro(sheet?: XLSX.WorkSheet) {
+  if (!sheet) {
+    return {
+      obraName: 'EMPREENDIMENTO IMPORTADO',
+      address: '',
+      startDate: new Date().toISOString().slice(0, 10),
+      plannedEndDate: '2028-02-01',
+      clientDeadline: '2028-01-01',
+      clientGrace: '2028-07-01',
+      accumulatedProgress: 0,
+      monthlyPeriods: [] as MonthlyPlannedPeriod[],
+    };
+  }
   const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
   // Metadados principais
@@ -236,7 +248,18 @@ export function parsePlanejamentoMacro(sheet: XLSX.WorkSheet) {
 /**
  * Lê abertura de % INDIRETOS e % DIRETOS
  */
-export function parseDetailedItemsSheet(sheet: XLSX.WorkSheet, isDirect: boolean) {
+export function parseDetailedItemsSheet(sheet: XLSX.WorkSheet | undefined, isDirect: boolean) {
+  if (!sheet) {
+    return {
+      totalBudget: 0,
+      weightPercent: 0,
+      executedPrevious: 0,
+      executedMonth: 0,
+      executedAccumulated: 0,
+      balancePercent: 0,
+      items: [] as any[],
+    };
+  }
   const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
   let totalBudget = 0;
@@ -313,31 +336,67 @@ export function parseDetailedItemsSheet(sheet: XLSX.WorkSheet, isDirect: boolean
 }
 
 /**
- * Lê a aba BASE ORÇAMENTO (320 linhas)
+ * Lê a aba BASE ORÇAMENTO (suporta o modelo Atrium PCO e variações de cabeçalhos)
  */
-export function parseBaseOrcamento(sheet: XLSX.WorkSheet) {
+export function parseBaseOrcamento(sheet?: XLSX.WorkSheet) {
+  if (!sheet) {
+    return {
+      totalAmount: 0,
+      linesCount: 0,
+      items: [] as any[],
+    };
+  }
   const rawRows: any[] = XLSX.utils.sheet_to_json(sheet);
   const items: any[] = [];
   let totalAmount = 0;
 
   rawRows.forEach((r, idx) => {
-    const contaOrcamento = String(r['CONTA ORÇAMENTO'] || '').trim();
-    const contaSws = String(r['CONTA SWS'] || '').trim();
-    const valor = Number(r['VALOR']) || 0;
-    const grupoOrcamento = String(r['GRUPO ORÇAMENTO'] || '').trim();
+    const contaOrcamento = String(
+      r['CONTA ORÇAMENTO'] ||
+        r['CONTA ORCAMENTO'] ||
+        r['SUBETAPA'] ||
+        r['ATIVIDADE'] ||
+        r['DESCRIÇÃO'] ||
+        r['DESCRICAO'] ||
+        ''
+    ).trim();
+    const contaSws = String(
+      r['CONTA SWS'] || r['CONTA ERP'] || r['CONTA CONTABIL'] || r['CONTA CONTÁBIL'] || ''
+    ).trim();
+    const rawVal =
+      r['VALOR'] ??
+      r['VALOR ORÇADO'] ??
+      r['VALOR ORCADO'] ??
+      r['TOTAL'] ??
+      r['ORÇADO'] ??
+      r['CUSTO ORÇADO'] ??
+      0;
+    const valor =
+      typeof rawVal === 'number'
+        ? rawVal
+        : parseFloat(String(rawVal).replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0;
+    const grupoOrcamento = String(
+      r['GRUPO ORÇAMENTO'] || r['GRUPO ORCAMENTO'] || r['ETAPA'] || r['GRUPO'] || 'ORÇAMENTO GERAL'
+    ).trim();
 
     if (!contaOrcamento && valor === 0) return;
 
     totalAmount += valor;
 
     // Extrai código e descrição de CONTA ORÇAMENTO (Ex: "01.0144153 ALVARÁ DE CONSTRUÇÃO")
-    let code = '';
+    let code = String(r['CÓDIGO'] || r['CODIGO'] || r['ITEM'] || '').trim();
     let description = contaOrcamento;
     const match = contaOrcamento.match(/^([0-9]{2}\.[0-9]{2,8})\s*(.*)$/);
     if (match) {
-      code = match[1];
+      if (!code) code = match[1];
       description = match[2] || contaOrcamento;
+    } else if (!code) {
+      code = `${String(Math.floor(idx / 10) + 1).padStart(2, '0')}.${String((idx % 10) + 1).padStart(2, '0')}`;
     }
+
+    const fgVal = String(
+      r['FG'] || r['TIPO DESPESA'] || r['COMPOSIÇÃO'] || r['COMPOSICAO'] || 'MATERIAL'
+    ).trim();
 
     items.push({
       row_index: idx + 1,
@@ -350,7 +409,7 @@ export function parseBaseOrcamento(sheet: XLSX.WorkSheet) {
       x: r['X'] !== undefined ? Number(r['X']) : null,
       rr: r['RR'] !== undefined ? Number(r['RR']) : null,
       tr: r['TR'] !== undefined ? Number(r['TR']) : null,
-      fg: r['FG'] !== undefined ? String(r['FG']) : '',
+      fg: fgVal,
       valor,
       grupo_orcamento: grupoOrcamento,
     });
@@ -366,7 +425,16 @@ export function parseBaseOrcamento(sheet: XLSX.WorkSheet) {
 /**
  * Lê a aba REAL (5.635 lançamentos)
  */
-export function parseReal(sheet: XLSX.WorkSheet) {
+export function parseReal(sheet?: XLSX.WorkSheet) {
+  if (!sheet) {
+    return {
+      grossTotal: 0,
+      linesCount: 0,
+      dateMin: '',
+      dateMax: '',
+      entries: [] as any[],
+    };
+  }
   const rawRows: any[] = XLSX.utils.sheet_to_json(sheet);
   const entries: any[] = [];
   let grossTotal = 0;
@@ -422,7 +490,14 @@ export function parseReal(sheet: XLSX.WorkSheet) {
 /**
  * Lê a aba de-para (115 regras)
  */
-export function parseDePara(sheet: XLSX.WorkSheet) {
+export function parseDePara(sheet?: XLSX.WorkSheet) {
+  if (!sheet) {
+    return {
+      rulesCount: 0,
+      distinctAdjustedAccounts: 0,
+      rules: [] as { original_account: string; adjusted_account: string; clean_original: string }[],
+    };
+  }
   const rawRows: any[] = XLSX.utils.sheet_to_json(sheet);
   const rules: { original_account: string; adjusted_account: string; clean_original: string }[] = [];
   const adjustedAccountsSet = new Set<string>();
@@ -638,6 +713,20 @@ export function validatePcoParsedData(parsed: PcoParsedData): PcoValidationResul
   };
 }
 
+function findSheetByAliases(wb: XLSX.WorkBook, aliases: string[]): XLSX.WorkSheet | undefined {
+  for (const alias of aliases) {
+    if (wb.Sheets[alias]) return wb.Sheets[alias];
+  }
+  const normAliases = aliases.map((a) => normalizeKey(a));
+  for (const name of wb.SheetNames || []) {
+    const normName = normalizeKey(name);
+    if (normAliases.includes(normName) || normAliases.some((a) => normName.includes(a))) {
+      return wb.Sheets[name];
+    }
+  }
+  return undefined;
+}
+
 /**
  * Função principal que processa um Workbook completo do Excel ou ArrayBuffer
  */
@@ -653,12 +742,15 @@ export function parsePcoWorkbook(
     wb = XLSX.read(input, { type: 'array' });
   }
 
-  const macroSheet = wb.Sheets['PLANEJAMENTO MACRO'];
-  const indirectsSheet = wb.Sheets['% INDIRETOS'];
-  const directsSheet = wb.Sheets['% DIRETOS'];
-  const baseSheet = wb.Sheets['BASE ORÇAMENTO'];
-  const realSheet = wb.Sheets['REAL'];
-  const deParaSheet = wb.Sheets['de-para'];
+  const macroSheet = findSheetByAliases(wb, ['PLANEJAMENTO MACRO', 'MACRO', 'CRONOGRAMA MACRO']);
+  const indirectsSheet = findSheetByAliases(wb, ['% INDIRETOS', 'INDIRETOS']);
+  const directsSheet = findSheetByAliases(wb, ['% DIRETOS', 'DIRETOS']);
+  let baseSheet = findSheetByAliases(wb, ['BASE ORÇAMENTO', 'BASE ORCAMENTO', 'ORÇAMENTO', 'ORCAMENTO']);
+  if (!baseSheet && wb.SheetNames && wb.SheetNames.length === 1) {
+    baseSheet = wb.Sheets[wb.SheetNames[0]];
+  }
+  const realSheet = findSheetByAliases(wb, ['REAL', 'REALIZADO', 'EXTRATO']);
+  const deParaSheet = findSheetByAliases(wb, ['de-para', 'DE-PARA', 'DE PARA']);
 
   const macroData = parsePlanejamentoMacro(macroSheet);
   const indirectsData = parseDetailedItemsSheet(indirectsSheet, false);

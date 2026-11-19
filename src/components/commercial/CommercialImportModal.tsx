@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   UnifiedCommercialErpRow,
   CommercialUnit,
@@ -7,7 +7,7 @@ import {
   buildCommercialUnitsFromUnifiedRows,
   calculateCommercialSummary,
   syncUnifiedCommercialToSupabase,
-  COMMERCIAL_UNITS_STORAGE_KEY,
+  getCommercialStorageKey,
 } from '../../lib/atrium-commercial-data';
 import { formatBRL } from '../../lib/utils';
 import {
@@ -24,20 +24,35 @@ interface CommercialImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportSuccess: (updatedUnits: CommercialUnit[]) => void;
+  workId?: string;
+  workName?: string;
 }
 
 export const CommercialImportModal: React.FC<CommercialImportModalProps> = ({
   isOpen,
   onClose,
   onImportSuccess,
+  workId = 'work-1',
+  workName = 'Atrium Select',
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [parsedRows, setParsedRows] = useState<UnifiedCommercialErpRow[]>(INITIAL_UNIFIED_ROWS);
+  const [parsedRows, setParsedRows] = useState<UnifiedCommercialErpRow[]>(
+    workId === 'work-1' ? INITIAL_UNIFIED_ROWS : []
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedFile(null);
+      setErrorMsg(null);
+      setStatusMsg(null);
+      setParsedRows(workId === 'work-1' ? INITIAL_UNIFIED_ROWS : []);
+    }
+  }, [isOpen, workId]);
 
   if (!isOpen) return null;
 
@@ -71,16 +86,16 @@ export const CommercialImportModal: React.FC<CommercialImportModalProps> = ({
 
     const units = buildCommercialUnitsFromUnifiedRows(parsedRows);
     try {
-      localStorage.setItem(COMMERCIAL_UNITS_STORAGE_KEY, JSON.stringify(units));
+      localStorage.setItem(getCommercialStorageKey(workId), JSON.stringify(units));
     } catch {}
 
-    const syncRes = await syncUnifiedCommercialToSupabase(parsedRows);
+    const syncRes = await syncUnifiedCommercialToSupabase(parsedRows, workId);
     setIsSaving(false);
 
     onImportSuccess(units);
 
     if (syncRes.ok) {
-      setStatusMsg('Relatório Geral de Vendas importado e sincronizado com o Supabase com sucesso!');
+      setStatusMsg(`Relatório Geral de Vendas de ${workName} importado e sincronizado com o Supabase com sucesso!`);
       setTimeout(() => {
         onClose();
       }, 1200);
@@ -102,10 +117,10 @@ export const CommercialImportModal: React.FC<CommercialImportModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 dark:text-white">
-                Importar Relatório Geral de Vendas ERP (vendasgeral.xlsx)
+                Importar Relatório Geral de Vendas ERP — {workName}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Importação unificada das 80 unidades, contratos, compradores, valores pagos e saldos.
+                Importação unificada de unidades, contratos, compradores, valores pagos e saldos para {workName}.
               </p>
             </div>
           </div>
