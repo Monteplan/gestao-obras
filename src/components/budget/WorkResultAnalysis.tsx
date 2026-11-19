@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Work, BudgetItem, PurchaseOrder, IncurredCost, Revenue } from '../../types';
-import { formatBRL, formatPercent } from '../../lib/utils';
+import { formatBRL, formatPercent, formatDateBR } from '../../lib/utils';
 import { useData } from '../../contexts/DataContext';
 import {
   ATRIUM_DRE_SUMMARY,
@@ -51,7 +51,16 @@ interface WorkResultAnalysisProps {
 }
 
 export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: propWork }) => {
-  const { works, stages, revenues, incurredCosts, customDeParaRules } = useData();
+  const {
+    works,
+    stages,
+    revenues,
+    incurredCosts,
+    customDeParaRules,
+    importBatches,
+    lastSyncedAt,
+    stageProgressHistory,
+  } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
 
   const [activeSubTab, setActiveSubTab] = useState<'dre' | 'indicadores'>('dre');
@@ -118,6 +127,98 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
   const summary = dynamicDreData.summary;
   const measuredSummary = dynamicDreData.measuredSummary;
 
+  // Identificação dinâmica do Mês da Medição Física (EAP) e Data de Atualização dos Dados Financeiros (ERP)
+  const referenceMetadata = useMemo(() => {
+    const monthsAbbr = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const isAtrium = currentWork?.id === 'work-1' || currentWork?.code === 'OBR-001';
+
+    // 1. Mês de referência da Medição Física EAP
+    let measurementMonthLabel = isAtrium ? 'SET/2026' : 'ATUAL';
+    let measurementDateDisplay = isAtrium ? '30/09/2026' : formatDateBR(currentWork?.updated_at);
+    const workStageHistory = (stageProgressHistory || []).filter((h) => h.work_id === currentWork?.id);
+    if (workStageHistory.length > 0) {
+      const latestHist = workStageHistory.reduce((a, b) => (a.created_at > b.created_at ? a : b));
+      const d = latestHist.created_at.slice(0, 10);
+      const parts = d.split('-');
+      if (parts.length === 3) {
+        const mIdx = parseInt(parts[1], 10) - 1;
+        if (mIdx >= 0 && mIdx < 12) {
+          measurementMonthLabel = `${monthsAbbr[mIdx]}/${parts[0]}`;
+          measurementDateDisplay = formatDateBR(d);
+        }
+      }
+    } else if (currentWork?.pco_last_imported_at) {
+      const d = currentWork.pco_last_imported_at.slice(0, 10);
+      const parts = d.split('-');
+      if (parts.length === 3) {
+        const mIdx = parseInt(parts[1], 10) - 1;
+        if (mIdx >= 0 && mIdx < 12) {
+          measurementMonthLabel = `${monthsAbbr[mIdx]}/${parts[0]}`;
+          measurementDateDisplay = formatDateBR(d);
+        }
+      }
+    }
+
+    // 2. Último lançamento financeiro real da obra (Data de corte do ERP)
+    const workCosts = incurredCosts.filter((c) =>
+      isAtrium ? !c.work_id || c.work_id === 'work-1' : c.work_id === currentWork?.id
+    );
+    const workRevs = revenues.filter((r) =>
+      isAtrium ? !r.work_id || r.work_id === 'work-1' : r.work_id === currentWork?.id
+    );
+    let maxEntryDate = '';
+    workCosts.forEach((c) => {
+      if (c.date && c.date.slice(0, 10) > maxEntryDate) maxEntryDate = c.date.slice(0, 10);
+    });
+    workRevs.forEach((r) => {
+      if (r.date && r.date.slice(0, 10) > maxEntryDate) maxEntryDate = r.date.slice(0, 10);
+    });
+
+    let financialMonthLabel = isAtrium ? 'SET/2026' : 'ATUAL';
+    let latestEntryDateBR = isAtrium ? '30/09/2026' : '—';
+    if (maxEntryDate) {
+      latestEntryDateBR = formatDateBR(maxEntryDate);
+      const parts = maxEntryDate.split('-');
+      if (parts.length === 3) {
+        const mIdx = parseInt(parts[1], 10) - 1;
+        if (mIdx >= 0 && mIdx < 12) {
+          financialMonthLabel = `${monthsAbbr[mIdx]}/${parts[0]}`;
+        }
+      }
+    }
+
+    // 3. Data/hora da última atualização/importação de dados
+    const workBatches = (importBatches || []).filter(
+      (b) => !b.work_id || b.work_id === currentWork?.id
+    );
+    const latestBatch = workBatches[0];
+    const rawUpdateIso =
+      latestBatch?.created_at ||
+      lastSyncedAt ||
+      currentWork?.pco_last_imported_at ||
+      currentWork?.updated_at;
+
+    let lastUpdatedLabel = 'Sincronizado com Supabase';
+    if (rawUpdateIso) {
+      const dt = new Date(rawUpdateIso);
+      if (!isNaN(dt.getTime())) {
+        const dStr = dt.toLocaleDateString('pt-BR');
+        const tStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        lastUpdatedLabel = `${dStr} às ${tStr}`;
+      }
+    }
+
+    return {
+      measurementMonthLabel,
+      measurementDateDisplay,
+      financialMonthLabel,
+      latestEntryDateBR,
+      lastUpdatedLabel,
+      latestBatchFileName: latestBatch?.file_name,
+      totalEntriesCount: workCosts.length + workRevs.length,
+    };
+  }, [currentWork, incurredCosts, revenues, importBatches, lastSyncedAt, stageProgressHistory]);
+
   // Filtragem da DRE com todas as 200+ contas recalculadas dinamicamente
   const filteredDreLines = useMemo(() => {
     let lines = dynamicDreData.lines;
@@ -138,51 +239,144 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* SELETOR DE MODO DE COMPARAÇÃO DO ORÇAMENTO (GLOBAL vs MEDIÇÃO EAP) */}
-      <div className="p-3.5 bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
-            <SlidersHorizontal className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-white flex items-center space-x-2">
-              <span>Seletor de Visão do Orçamento</span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-800/60 flex items-center space-x-1">
-                <Gauge className="w-3 h-3 text-blue-400" />
-                <span>Medição Atual EAP: {formatPercent(dynamicDreData.globalProgressPercent, 2)}</span>
-              </span>
+      {/* SELETOR DE MODO DE COMPARAÇÃO DO ORÇAMENTO E QUADRO DE REFERÊNCIA DA MEDIÇÃO EAP (MÊS & VALORES EM R$) */}
+      <div className="p-4 bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-700/80 rounded-2xl shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+              <SlidersHorizontal className="w-4 h-4" />
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {comparisonMode === 'total'
-                ? 'Modo 1 Ativo: Orçamento Total (100% da vida útil do empreendimento) vs Realizado. Utilizado para controlar o saldo global a gastar.'
-                : 'Modo 2 Ativo: Orçado até a Medição EAP vs Realizado. Utilizado para comparar o que foi gasto com o que deveria ter sido gasto para o avanço físico medido.'}
-            </p>
+            <div>
+              <div className="text-xs font-bold text-white flex flex-wrap items-center gap-2">
+                <span>Quadro da DRE & Referência da Medição EAP</span>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-700/70 flex items-center space-x-1">
+                  <Gauge className="w-3 h-3 text-blue-400" />
+                  <span>
+                    Mês da Medição EAP: {referenceMetadata.measurementMonthLabel} ({formatPercent(dynamicDreData.globalProgressPercent, 2)})
+                  </span>
+                </span>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/70">
+                  Realizado ERP até: {referenceMetadata.financialMonthLabel} ({referenceMetadata.latestEntryDateBR})
+                </span>
+                <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                  Atualizado em: {referenceMetadata.lastUpdatedLabel}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {comparisonMode === 'total'
+                  ? `Modo 1 Ativo: Orçamento Total (100%) vs Realizado (com coluna de referência da Medição de ${referenceMetadata.measurementMonthLabel} em R$).`
+                  : `Modo 2 Ativo: Orçado até a Medição EAP (${referenceMetadata.measurementMonthLabel} • ${formatPercent(dynamicDreData.globalProgressPercent, 2)}) vs Realizado ERP (${referenceMetadata.financialMonthLabel}).`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0 self-start lg:self-auto">
+            <button
+              onClick={() => setComparisonMode('total')}
+              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                comparisonMode === 'total'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <PieChart className="w-3.5 h-3.5" />
+              <span>1. Orçamento Total (100%)</span>
+            </button>
+            <button
+              onClick={() => setComparisonMode('measured')}
+              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                comparisonMode === 'measured'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Gauge className="w-3.5 h-3.5" />
+              <span>2. Orçado na Medição ({referenceMetadata.measurementMonthLabel})</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
-          <button
-            onClick={() => setComparisonMode('total')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              comparisonMode === 'total'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
+        {/* FAIXA DE VALORES EM R$ DA MEDIÇÃO ATUAL vs ORÇAMENTO TOTAL vs REALIZADO */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-800/90 text-xs">
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase font-bold">
+              <span>Mês & Avanço da Medição EAP</span>
+              <span className="text-blue-400 font-mono">{referenceMetadata.measurementMonthLabel}</span>
+            </div>
+            <div className="text-base font-black text-white font-mono mt-1">
+              {formatPercent(dynamicDreData.globalProgressPercent, 2)} executado
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              Orçado 100% Obra: <strong className="text-slate-200 font-mono">{formatBRL(summary.custoObra.orcado)}</strong>
+            </div>
+          </div>
+
+          <div className="bg-blue-950/30 border border-blue-800/50 rounded-xl p-3">
+            <div className="flex items-center justify-between text-[10px] text-blue-300 uppercase font-bold">
+              <span>Custo Orçado na Medição ({referenceMetadata.measurementMonthLabel})</span>
+              <span className="px-1.5 py-0.2 rounded bg-blue-900/60 text-blue-200 font-mono">R$ Medido</span>
+            </div>
+            <div className="text-base font-black text-blue-300 font-mono mt-1">
+              {formatBRL(measuredSummary.custoObra.orcadoMedido)}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              Receita Medida ({referenceMetadata.measurementMonthLabel}):{' '}
+              <strong className="text-slate-200 font-mono">{formatBRL(measuredSummary.receita.orcadoMedido)}</strong>
+            </div>
+          </div>
+
+          <div className="bg-amber-950/25 border border-amber-800/50 rounded-xl p-3">
+            <div className="flex items-center justify-between text-[10px] text-amber-300 uppercase font-bold">
+              <span>Custo de Obra Realizado (até {referenceMetadata.financialMonthLabel})</span>
+              <span className="text-amber-400 font-mono">{referenceMetadata.latestEntryDateBR}</span>
+            </div>
+            <div className="text-base font-black text-white font-mono mt-1">
+              {formatBRL(summary.custoObra.realizado)}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              Receita Bruta Realizada:{' '}
+              <strong className="text-emerald-400 font-mono">{formatBRL(summary.receita.realizadoBruto)}</strong>
+            </div>
+          </div>
+
+          <div
+            className={`rounded-xl p-3 border ${
+              measuredSummary.custoObra.variacaoMedido <= 0
+                ? 'bg-emerald-950/30 border-emerald-800/50'
+                : 'bg-rose-950/30 border-rose-800/50'
             }`}
           >
-            <PieChart className="w-3.5 h-3.5" />
-            <span>1. Orçamento Total (100%)</span>
-          </button>
-          <button
-            onClick={() => setComparisonMode('measured')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              comparisonMode === 'measured'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Gauge className="w-3.5 h-3.5" />
-            <span>2. Orçado até a Medição EAP</span>
-          </button>
+            <div className="flex items-center justify-between text-[10px] uppercase font-bold">
+              <span
+                className={
+                  measuredSummary.custoObra.variacaoMedido <= 0 ? 'text-emerald-300' : 'text-rose-300'
+                }
+              >
+                Desvio Custo Obra s/ Medição ({referenceMetadata.measurementMonthLabel})
+              </span>
+              <span
+                className={`px-1.5 py-0.2 rounded font-bold ${
+                  measuredSummary.custoObra.variacaoMedido <= 0
+                    ? 'bg-emerald-900/60 text-emerald-300'
+                    : 'bg-rose-900/60 text-rose-300'
+                }`}
+              >
+                {measuredSummary.custoObra.variacaoMedido <= 0 ? 'Economia' : 'Estouro'}
+              </span>
+            </div>
+            <div
+              className={`text-base font-black font-mono mt-1 ${
+                measuredSummary.custoObra.variacaoMedido <= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}
+            >
+              {measuredSummary.custoObra.variacaoMedido > 0
+                ? `+${formatBRL(measuredSummary.custoObra.variacaoMedido)}`
+                : formatBRL(measuredSummary.custoObra.variacaoMedido)}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              Base: {referenceMetadata.totalEntriesCount.toLocaleString('pt-BR')} lançamentos reais
+            </div>
+          </div>
         </div>
       </div>
 
@@ -584,8 +778,13 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                     </th>
                     {comparisonMode === 'total' ? (
                       <>
-                        <th className="p-3 text-right">Orçado Total (R$)</th>
-                        <th className="p-3 text-right">Realizado (R$)</th>
+                        <th className="p-3 text-right">Orçado Total 100% (R$)</th>
+                        <th className="p-3 text-right bg-blue-500/5 border-x border-blue-500/15 text-blue-600 dark:text-blue-400">
+                          Medição {referenceMetadata.measurementMonthLabel} (% e R$)
+                        </th>
+                        <th className="p-3 text-right">
+                          Realizado ({referenceMetadata.financialMonthLabel} - R$)
+                        </th>
                         <th className="p-3 text-right">Variação Saldo (R$)</th>
                         <th className="p-3 text-center min-w-[100px]">% Realizado</th>
                         <th className="p-3 text-right">% s/ Receita Orç.</th>
@@ -593,9 +792,15 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                       </>
                     ) : (
                       <>
-                        <th className="p-3 text-center min-w-[90px]">% Medido EAP</th>
-                        <th className="p-3 text-right min-w-[130px]">Orçado Medido (R$)</th>
-                        <th className="p-3 text-right min-w-[130px]">Realizado ERP (R$)</th>
+                        <th className="p-3 text-center min-w-[90px]">
+                          % Medido ({referenceMetadata.measurementMonthLabel})
+                        </th>
+                        <th className="p-3 text-right min-w-[130px]">
+                          Orçado Medido ({referenceMetadata.measurementMonthLabel} - R$)
+                        </th>
+                        <th className="p-3 text-right min-w-[130px]">
+                          Realizado ERP ({referenceMetadata.financialMonthLabel} - R$)
+                        </th>
                         <th className="p-3 text-right min-w-[130px]">Desvio na Fase (R$)</th>
                         <th className="p-3 text-center min-w-[110px]">% Desempenho</th>
                         <th className="p-3 text-center min-w-[130px]">Diagnóstico</th>
@@ -715,6 +920,14 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                           <>
                             <td className="p-2.5 text-right font-mono">
                               {formatBRL(line.orcado)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono bg-blue-500/[0.03] border-x border-blue-500/10">
+                              <div className="font-bold text-blue-600 dark:text-blue-400">
+                                {formatBRL(line.orcadoMedido ?? 0)}
+                              </div>
+                              <div className="text-[9px] text-slate-400">
+                                {referenceMetadata.measurementMonthLabel} • {formatPercent(line.measuredPercent ?? 0, 1)}
+                              </div>
                             </td>
                             <td className="p-2.5 text-right font-mono font-bold">
                               {formatBRL(line.realizado)}

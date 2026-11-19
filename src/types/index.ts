@@ -403,10 +403,15 @@ export interface UnmappedAccountItem {
   targetBudgetStage?: string;
 }
 
-export type DeduplicationStrategy = 'insert_new' | 'update_existing' | 'reject_duplicates';
+export type DeduplicationStrategy =
+  | 'insert_new'
+  | 'update_existing'
+  | 'replace_all'
+  | 'reject_duplicates';
 
 export interface ErpImportBatch {
   id: string;
+  work_id?: string;
   import_type: ErpImportType;
   file_name: string;
   deduplication_strategy: DeduplicationStrategy;

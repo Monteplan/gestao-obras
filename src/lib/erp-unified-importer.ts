@@ -290,11 +290,27 @@ export function detectWorkFromRows(
 }
 
 /**
+ * Monta chave composta normalizada para controle de idempotência / deduplicação
+ */
+export function buildEntryDedupKey(
+  doc: string | undefined | null,
+  date: string | undefined | null,
+  amount: number | undefined | null,
+  account: string | undefined | null
+): string {
+  const cleanDoc = String(doc || '').trim();
+  const cleanDate = String(date || '').trim().slice(0, 10);
+  const cleanAmt = Number(amount || 0).toFixed(2);
+  const cleanAcc = String(account || '').trim().toUpperCase();
+  return `${cleanDoc}|${cleanDate}|${cleanAmt}|${cleanAcc}`;
+}
+
+/**
  * Processa a importação unificada completa (5.906+ linhas):
  * 1. Segrega Receitas e Custos/Despesas
- * 2. Faz a deduplicação rigorosa contra o Supabase
+ * 2. Faz a deduplicação rigorosa contra o Supabase (ou sobrepõe tudo se strategy === 'replace_all')
  * 3. Grava novos lançamentos em actual_financial_entries no Supabase em lotes
- * 4. Retorna as listas de novos custos e receitas para sincronizar com o estado local
+ * 4. Retorna as listas de novos custos e receitas para sincronizar com o estado local sem jamais duplicar
  */
 export async function executeUnifiedErpImport(
   fileName: string,
@@ -308,6 +324,11 @@ export async function executeUnifiedErpImport(
   totalRows: number;
   newCosts: IncurredCost[];
   newRevenues: Revenue[];
+  allFileCosts: IncurredCost[];
+  allFileRevenues: Revenue[];
+  replaceWorkEntries: boolean;
+  workId: string;
+  latestEntryDate?: string;
   insertedEntriesCount: number;
   alreadyExistingCount: number;
   totalCostAmount: number;
@@ -320,9 +341,10 @@ export async function executeUnifiedErpImport(
   const resolvedSupabaseWorkId = supabaseWorkId || toSupabaseWorkUuid(workId);
 
   try {
-    // 1. Busca chaves de deduplicação existentes no Supabase para a obra selecionada
-    const existingDbKeys = new Set<string>();
-    if (isSupabaseConfigured() && supabase) {
+    // 1. Busca contagem de ocorrências por chave de deduplicação existentes no Supabase para a obra selecionada
+    //    (Apenas se não for 'replace_all', pois 'replace_all' irá substituir toda a base da obra pelo novo arquivo)
+    const existingDbKeyCounts = new Map<string, number>();
+    if (strategy !== 'replace_all' && isSupabaseConfigured() && supabase) {
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
@@ -335,8 +357,8 @@ export async function executeUnifiedErpImport(
 
         if (error || !data || data.length === 0) break;
         data.forEach((r: any) => {
-          const k = `${r.document_number || ''}|${r.entry_date || ''}|${Number(r.amount || 0).toFixed(2)}|${(r.cost_account_name || '').trim()}`;
-          existingDbKeys.add(k);
+          const k = buildEntryDedupKey(r.document_number, r.entry_date, r.amount, r.cost_account_name);
+          existingDbKeyCounts.set(k, (existingDbKeyCounts.get(k) || 0) + 1);
         });
 
         if (data.length < pageSize) hasMore = false;
@@ -346,39 +368,36 @@ export async function executeUnifiedErpImport(
 
     const newCosts: IncurredCost[] = [];
     const newRevenues: Revenue[] = [];
+    const allFileCosts: IncurredCost[] = [];
+    const allFileRevenues: Revenue[] = [];
     const entriesToInsertInDb: any[] = [];
+    const fileKeyOccurrences = new Map<string, number>();
     let alreadyExistingCount = 0;
     let totalCostAmount = 0;
     let totalRevenueAmount = 0;
+    let latestEntryDate = '';
 
     rows.forEach((row, idx) => {
       const sanitized = sanitizeRowData(row, idx + 2);
       if (!sanitized.valor || sanitized.valor <= 0) return;
 
+      if (sanitized.data && sanitized.data > latestEntryDate) {
+        latestEntryDate = sanitized.data;
+      }
+
       const rule = findDeParaRule(sanitized.conta, customRules);
       const adjustedAccount = rule?.adjustedAccount || sanitized.conta.toUpperCase();
       const isObra = rule ? rule.isObra : sanitized.naturezaCodigo === 'P';
 
-      const dedupKey = `${sanitized.documento}|${sanitized.data}|${sanitized.valor.toFixed(2)}|${sanitized.conta}`;
-      const existsInDb = existingDbKeys.has(dedupKey);
-
-      if (existsInDb) {
-        alreadyExistingCount++;
-        if (strategy === 'insert_new') return;
-      }
-
       // Determina classificação de natureza
-      const isRevenue =
-        sanitized.naturezaCodigo === 'R' ||
-        sanitized.naturezaCodigo === 'T' ||
-        adjustedAccount.includes('RECEITA') ||
-        adjustedAccount.includes('RENDIMENTOS') ||
-        adjustedAccount.includes('JUROS E MULTAS');
-
       let natureClassification = 'custo_obra';
       if (sanitized.naturezaCodigo === 'R' || adjustedAccount.includes('RECEITA')) {
         natureClassification = 'receita';
-      } else if (sanitized.naturezaCodigo === 'T' || adjustedAccount.includes('RENDIMENTO') || adjustedAccount.includes('JUROS')) {
+      } else if (
+        sanitized.naturezaCodigo === 'T' ||
+        adjustedAccount.includes('RENDIMENTO') ||
+        adjustedAccount.includes('JUROS')
+      ) {
         natureClassification = 'rendimento';
       } else if (
         sanitized.conta.toUpperCase().includes('COFINS') ||
@@ -391,79 +410,159 @@ export async function executeUnifiedErpImport(
         natureClassification = 'despesa_adm';
       }
 
-      // Objeto mestre para actual_financial_entries no Supabase
-      if (!existsInDb) {
-        entriesToInsertInDb.push({
-          work_id: resolvedSupabaseWorkId,
-          source_batch_id: 'b0000000-0000-0000-0000-000000000001',
-          external_entry_id: `erp_${Date.now()}_${idx + 1}`,
-          company_unit: sanitized.unidade || null,
-          document_number: sanitized.documento,
-          cost_account_code: sanitized.conta,
-          cost_account_external_id: null,
-          cost_account_name: sanitized.conta,
-          cost_center: sanitized.obra,
-          entry_date: sanitized.data,
-          competency_date: sanitized.data,
-          supplier_contractor_name: sanitized.fornecedor,
-          entry_description: sanitized.descricao,
-          amount: sanitized.valor,
-          entry_type: sanitized.tipoConta || null,
-          treasury_account: sanitized.contaTesouraria || null,
-          history_text: sanitized.historicoComplementar || null,
-          grouping_code: sanitized.naturezaCodigo || null,
-          adjusted_consolidated_account: adjustedAccount,
-          nature_classification: natureClassification,
-          original_row_number: idx + 1,
-        });
+      // Alinha estritamente com fetchAllFromSupabase: apenas 'receita' vai para revenues,
+      // enquanto 'rendimento' permanece em incurredCosts com erp_account_code para alimentar as linhas financeiras da DRE
+      const isRevenue = natureClassification === 'receita';
+
+      const costObj: IncurredCost | null = !isRevenue
+        ? {
+            id: `cost-imp-${Date.now()}-${idx}`,
+            work_id: workId,
+            external_id: sanitized.documento,
+            date: sanitized.data,
+            document_number: sanitized.documento,
+            cost_center: sanitized.obra || `CC-${workId.toUpperCase()}`,
+            category: !isObra ? 'indireto' : 'material',
+            supplier_name: sanitized.fornecedor,
+            description: sanitized.descricao,
+            gross_value: sanitized.valor,
+            discounts: 0,
+            taxes: 0,
+            net_value: sanitized.valor,
+            payment_status: 'pago',
+            erp_account_code: sanitized.conta,
+            source_batch_id: batchId,
+            created_at: new Date().toISOString(),
+          }
+        : null;
+
+      const revObj: Revenue | null = isRevenue
+        ? {
+            id: `rev-imp-${Date.now()}-${idx}`,
+            work_id: workId,
+            external_id: sanitized.documento,
+            date: sanitized.data,
+            document_number: sanitized.documento,
+            description: `${sanitized.descricao} (${sanitized.fornecedor})`,
+            contracted_value: sanitized.valor,
+            recognized_value: sanitized.valor,
+            received_value: sanitized.valor,
+            status: 'recebido',
+            source_batch_id: batchId,
+            created_at: new Date().toISOString(),
+          }
+        : null;
+
+      if (revObj) {
+        allFileRevenues.push(revObj);
+        totalRevenueAmount += sanitized.valor;
+      } else if (costObj) {
+        allFileCosts.push(costObj);
+        totalCostAmount += sanitized.valor;
       }
 
-      // Segregação em Receitas vs Custos
-      if (isRevenue) {
-        totalRevenueAmount += sanitized.valor;
-        newRevenues.push({
-          id: `rev-imp-${Date.now()}-${idx}`,
-          work_id: workId,
-          external_id: sanitized.documento,
-          date: sanitized.data,
-          document_number: sanitized.documento,
-          description: `${sanitized.descricao} (${sanitized.fornecedor})`,
-          contracted_value: sanitized.valor,
-          recognized_value: sanitized.valor,
-          received_value: sanitized.valor,
-          status: 'recebido',
-          source_batch_id: batchId,
-          created_at: new Date().toISOString(),
-        });
-      } else {
-        totalCostAmount += sanitized.valor;
-        newCosts.push({
-          id: `cost-imp-${Date.now()}-${idx}`,
-          work_id: workId,
-          external_id: sanitized.documento,
-          date: sanitized.data,
-          document_number: sanitized.documento,
-          cost_center: sanitized.obra || `CC-${workId.toUpperCase()}`,
-          category: !isObra ? 'indireto' : 'material',
-          supplier_name: sanitized.fornecedor,
-          description: sanitized.descricao,
-          gross_value: sanitized.valor,
-          discounts: 0,
-          taxes: 0,
-          net_value: sanitized.valor,
-          payment_status: 'pago',
-          erp_account_code: sanitized.conta,
-          source_batch_id: batchId,
-          created_at: new Date().toISOString(),
-        });
+      const dedupKey = buildEntryDedupKey(
+        sanitized.documento,
+        sanitized.data,
+        sanitized.valor,
+        sanitized.conta
+      );
+      const occInFile = (fileKeyOccurrences.get(dedupKey) || 0) + 1;
+      fileKeyOccurrences.set(dedupKey, occInFile);
+
+      const existingCountInDb = existingDbKeyCounts.get(dedupKey) || 0;
+      const existsInDb = strategy !== 'replace_all' && occInFile <= existingCountInDb;
+
+      if (existsInDb) {
+        alreadyExistingCount++;
+        // Em 'update_existing' e 'insert_new', preserva o registro existente e NÃO o readiciona
+        // evitando qualquer duplicação de valores!
+        return;
+      }
+
+      // Objeto mestre para actual_financial_entries no Supabase (apenas novos ou todos no modo replace_all)
+      entriesToInsertInDb.push({
+        work_id: resolvedSupabaseWorkId,
+        source_batch_id: 'b0000000-0000-0000-0000-000000000001',
+        external_entry_id: `erp_${Date.now()}_${idx + 1}`,
+        company_unit: sanitized.unidade || null,
+        document_number: sanitized.documento,
+        cost_account_code: sanitized.conta,
+        cost_account_external_id: null,
+        cost_account_name: sanitized.conta,
+        cost_center: sanitized.obra,
+        entry_date: sanitized.data,
+        competency_date: sanitized.data,
+        supplier_contractor_name: sanitized.fornecedor,
+        entry_description: sanitized.descricao,
+        amount: sanitized.valor,
+        entry_type: sanitized.tipoConta || null,
+        treasury_account: sanitized.contaTesouraria || null,
+        history_text: sanitized.historicoComplementar || null,
+        grouping_code: sanitized.naturezaCodigo || null,
+        adjusted_consolidated_account: adjustedAccount,
+        nature_classification: natureClassification,
+        original_row_number: idx + 1,
+      });
+
+      if (revObj) {
+        newRevenues.push(revObj);
+      } else if (costObj) {
+        newCosts.push(costObj);
       }
     });
 
-    // 2. Inserção em lotes de 200 no Supabase
+    // Regra 'reject_duplicates': se houver qualquer duplicidade, rejeita o lote inteiro sem gravar
+    if (strategy === 'reject_duplicates' && alreadyExistingCount > 0) {
+      return {
+        success: false,
+        totalRows: rows.length,
+        newCosts: [],
+        newRevenues: [],
+        allFileCosts: [],
+        allFileRevenues: [],
+        replaceWorkEntries: false,
+        workId,
+        latestEntryDate,
+        insertedEntriesCount: 0,
+        alreadyExistingCount,
+        totalCostAmount: 0,
+        totalRevenueAmount: 0,
+        batch: {
+          id: batchId,
+          work_id: workId,
+          import_type: 'unified_erp_ledger',
+          file_name: fileName,
+          deduplication_strategy: strategy,
+          total_rows: rows.length,
+          imported_rows: 0,
+          updated_rows: 0,
+          ignored_rows: 0,
+          rejected_rows: alreadyExistingCount,
+          status: 'falha',
+          user_name: 'Usuário Monteplan',
+          created_at: new Date().toISOString(),
+        },
+        error: `Importação bloqueada pela opção "Rejeitar lote se houver duplicidade": foram encontrados ${alreadyExistingCount} lançamentos que já existem na base desta obra.`,
+      };
+    }
+
+    // 2. Se a estratégia for 'replace_all' (Sobrepor tudo), remove os lançamentos anteriores da obra no Supabase antes de inserir o novo arquivo
     let insertedEntriesCount = 0;
     let supabaseWarning: string | undefined = undefined;
 
     if (entriesToInsertInDb.length > 0 && isSupabaseConfigured() && supabase) {
+      if (strategy === 'replace_all') {
+        const { error: delErr } = await supabase
+          .from('actual_financial_entries')
+          .delete()
+          .eq('work_id', resolvedSupabaseWorkId);
+        if (delErr) {
+          console.warn('[executeUnifiedErpImport] Aviso ao limpar registros anteriores no modo replace_all:', delErr.message);
+          supabaseWarning = delErr.message;
+        }
+      }
+
       const CHUNK_SIZE = 200;
       for (let i = 0; i < entriesToInsertInDb.length; i += CHUNK_SIZE) {
         const chunk = entriesToInsertInDb.slice(i, i + CHUNK_SIZE);
@@ -471,7 +570,6 @@ export async function executeUnifiedErpImport(
         if (insertErr) {
           console.warn('[executeUnifiedErpImport] Aviso ao inserir bloco no Supabase (RLS ou permissão):', insertErr.message);
           supabaseWarning = insertErr.message;
-          // Não aborta a aplicação: os dados já foram calculados para o DataContext e localStorage
           break;
         }
         insertedEntriesCount += chunk.length;
@@ -480,6 +578,7 @@ export async function executeUnifiedErpImport(
 
     const batch: ErpImportBatch = {
       id: batchId,
+      work_id: workId,
       import_type: 'unified_erp_ledger',
       file_name: fileName,
       deduplication_strategy: strategy,
@@ -497,7 +596,7 @@ export async function executeUnifiedErpImport(
       'IMPORT_UNIFIED_ERP',
       'actual_financial_entries',
       batchId,
-      `Importação unificada concluída: ${rows.length} processados, ${entriesToInsertInDb.length} novos inseridos no Supabase, ${alreadyExistingCount} preservados.`
+      `Importação unificada (${strategy}) concluída para ${workId}: ${rows.length} lidos, ${entriesToInsertInDb.length} inseridos no Supabase, ${alreadyExistingCount} preservados.`
     );
 
     return {
@@ -505,6 +604,11 @@ export async function executeUnifiedErpImport(
       totalRows: rows.length,
       newCosts,
       newRevenues,
+      allFileCosts,
+      allFileRevenues,
+      replaceWorkEntries: strategy === 'replace_all',
+      workId,
+      latestEntryDate,
       insertedEntriesCount,
       alreadyExistingCount,
       totalCostAmount,
@@ -519,12 +623,17 @@ export async function executeUnifiedErpImport(
       totalRows: rows.length,
       newCosts: [],
       newRevenues: [],
+      allFileCosts: [],
+      allFileRevenues: [],
+      replaceWorkEntries: false,
+      workId,
       insertedEntriesCount: 0,
       alreadyExistingCount: 0,
       totalCostAmount: 0,
       totalRevenueAmount: 0,
       batch: {
         id: batchId,
+        work_id: workId,
         import_type: 'unified_erp_ledger',
         file_name: fileName,
         deduplication_strategy: strategy,

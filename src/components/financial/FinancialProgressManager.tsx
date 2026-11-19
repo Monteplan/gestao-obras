@@ -2,12 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { WorkResultAnalysis } from '../budget/WorkResultAnalysis';
 import { RealIncurredCompositionView } from './RealIncurredCompositionView';
-import { ErpImportWithDeParaModal } from '../budget/ErpImportWithDeParaModal';
-import { ATRIUM_DEPARA_RULES, DeParaRule } from '../../lib/atrium-real-data';
 import {
   TrendingUp,
   FileSpreadsheet,
-  UploadCloud,
   Building2,
 } from 'lucide-react';
 
@@ -17,6 +14,7 @@ interface FinancialProgressManagerProps {
 
 export const FinancialProgressManager: React.FC<FinancialProgressManagerProps> = ({ defaultWorkId }) => {
   const { works } = useData();
+
   const [selectedWorkId, setSelectedWorkId] = useState<string>(
     defaultWorkId || works[0]?.id || 'work-1'
   );
@@ -26,30 +24,13 @@ export const FinancialProgressManager: React.FC<FinancialProgressManagerProps> =
   );
 
   const [activeTab, setActiveTab] = useState<'resultado_dre' | 'composicao_realizado'>('resultado_dre');
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [customRules, setCustomRules] = useState<DeParaRule[]>([]);
-
-  const handleAddNewRule = (rule: DeParaRule) => {
-    setCustomRules((prev) => [...prev, rule]);
-  };
-
-  const handleImportComplete = (summary: any) => {
-    alert(
-      `Importação concluída para ${currentWork?.name}!\n${summary.importedCount} lançamentos processados.\nObra: R$ ${summary.totalObra.toLocaleString(
-        'pt-BR',
-        { minimumFractionDigits: 2 }
-      )}\nExtra Obra: R$ ${summary.totalExtraObra.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-      })}`
-    );
-  };
 
   return (
     <div className="space-y-6 pb-12">
       {/* Top Header do Acompanhamento Financeiro com Seletor de Obra */}
       <div className="glass-card p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#004171] text-white">
               Controladoria & Finanças
             </span>
@@ -88,14 +69,6 @@ export const FinancialProgressManager: React.FC<FinancialProgressManagerProps> =
               </select>
             </div>
           </div>
-
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center space-x-1.5"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>Importar Planilha ERP (.xlsx)</span>
-          </button>
         </div>
       </div>
 
@@ -131,15 +104,6 @@ export const FinancialProgressManager: React.FC<FinancialProgressManagerProps> =
       {activeTab === 'composicao_realizado' && (
         <RealIncurredCompositionView workId={selectedWorkId} workName={currentWork?.name} />
       )}
-
-      {/* Modal de Importação do ERP */}
-      <ErpImportWithDeParaModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onImportComplete={handleImportComplete}
-        existingRules={[...ATRIUM_DEPARA_RULES, ...customRules]}
-        onAddNewRule={handleAddNewRule}
-      />
     </div>
   );
 };

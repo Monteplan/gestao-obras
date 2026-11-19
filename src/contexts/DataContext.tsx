@@ -165,7 +165,15 @@ interface DataContextType {
   ) => { batch: ErpImportBatch; errors: ErpImportError[] };
   customDeParaRules: DeParaRule[];
   addCustomDeParaRule: (rule: DeParaRule) => void;
-  applyUnifiedErpImportResult: (data: { newCosts: IncurredCost[]; newRevenues: Revenue[]; batch: ErpImportBatch }) => void;
+  applyUnifiedErpImportResult: (data: {
+    newCosts: IncurredCost[];
+    newRevenues: Revenue[];
+    allFileCosts?: IncurredCost[];
+    allFileRevenues?: Revenue[];
+    replaceWorkEntries?: boolean;
+    workId?: string;
+    batch: ErpImportBatch;
+  }) => void;
 
   // PCO Import Engine
   pcoImportProfiles: PcoImportProfile[];
@@ -180,7 +188,7 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  const SCHEMA_VERSION = 'v10';
+  const SCHEMA_VERSION = 'v11';
 
   const loadInitial = <T,>(key: string, fallback: T): T => {
     try {
@@ -1056,15 +1064,60 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const applyUnifiedErpImportResult = (data: { newCosts: IncurredCost[]; newRevenues: Revenue[]; batch: ErpImportBatch }) => {
-    if (data.newCosts.length > 0) {
-      setIncurredCosts(prev => [...data.newCosts, ...prev]);
+  const applyUnifiedErpImportResult = (data: {
+    newCosts: IncurredCost[];
+    newRevenues: Revenue[];
+    allFileCosts?: IncurredCost[];
+    allFileRevenues?: Revenue[];
+    replaceWorkEntries?: boolean;
+    workId?: string;
+    batch: ErpImportBatch;
+  }) => {
+    const targetWorkId =
+      data.workId ||
+      data.batch.work_id ||
+      data.newCosts[0]?.work_id ||
+      data.allFileCosts?.[0]?.work_id ||
+      'work-1';
+
+    if (data.replaceWorkEntries) {
+      // Modo 'replace_all' (Sobrepor tudo): substitui completamente os dados da obra pelo novo arquivo
+      const replacementCosts = data.allFileCosts || data.newCosts;
+      const replacementRevenues = data.allFileRevenues || data.newRevenues;
+      setIncurredCosts((prev) => [
+        ...replacementCosts,
+        ...prev.filter((c) =>
+          targetWorkId === 'work-1' ? c.work_id && c.work_id !== 'work-1' : c.work_id !== targetWorkId
+        ),
+      ]);
+      setRevenues((prev) => [
+        ...replacementRevenues,
+        ...prev.filter((r) =>
+          targetWorkId === 'work-1' ? r.work_id && r.work_id !== 'work-1' : r.work_id !== targetWorkId
+        ),
+      ]);
+    } else {
+      // Modos 'update_existing' e 'insert_new': adiciona apenas lançamentos realmente novos e sincroniza com a base limpa do Supabase
+      if (data.newCosts.length > 0) {
+        setIncurredCosts((prev) => [...data.newCosts, ...prev]);
+      }
+      if (data.newRevenues.length > 0) {
+        setRevenues((prev) => [...data.newRevenues, ...prev]);
+      }
+      if (isSupabaseConfigured()) {
+        syncWithSupabase().catch(console.warn);
+      }
     }
-    if (data.newRevenues.length > 0) {
-      setRevenues(prev => [...data.newRevenues, ...prev]);
-    }
-    setImportBatches(prev => [data.batch, ...prev]);
-    addAuditLog('Importação Unificada ERP', 'actual_financial_entries', data.batch.id, `${data.newCosts.length} custos e ${data.newRevenues.length} receitas importados.`);
+
+    setImportBatches((prev) => [data.batch, ...prev]);
+    addAuditLog(
+      'Importação Unificada ERP',
+      'actual_financial_entries',
+      data.batch.id,
+      data.replaceWorkEntries
+        ? `Base da obra ${targetWorkId} substituída pelo novo arquivo (${(data.allFileCosts || data.newCosts).length} custos e ${(data.allFileRevenues || data.newRevenues).length} receitas).`
+        : `${data.newCosts.length} novos custos e ${data.newRevenues.length} novas receitas sincronizados para ${targetWorkId}.`
+    );
   };
 
   // Medições Físicas
@@ -1305,7 +1358,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         imported++;
       });
 
-      if (strategy === 'update_existing') {
+      if (strategy === 'replace_all') {
+        const replacedWorkIds = new Set(newCosts.map(c => c.work_id));
+        setIncurredCosts(prev => [...newCosts, ...prev.filter(c => !replacedWorkIds.has(c.work_id))]);
+      } else if (strategy === 'update_existing') {
         setIncurredCosts([...Array.from(updatedCostMap.values()), ...newCosts]);
       } else {
         setIncurredCosts(prev => [...newCosts, ...prev]);

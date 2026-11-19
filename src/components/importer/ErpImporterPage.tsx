@@ -372,6 +372,10 @@ export const ErpImporterPage: React.FC = () => {
         applyUnifiedErpImportResult({
           newCosts: result.newCosts,
           newRevenues: result.newRevenues,
+          allFileCosts: result.allFileCosts,
+          allFileRevenues: result.allFileRevenues,
+          replaceWorkEntries: result.replaceWorkEntries,
+          workId: result.workId,
           batch: result.batch,
         });
 
@@ -583,6 +587,9 @@ export const ErpImporterPage: React.FC = () => {
               <option value="update_existing" className="bg-slate-900">
                 Preservar e sincronizar novos lançamentos (Recomendado)
               </option>
+              <option value="replace_all" className="bg-slate-900">
+                Sobrepor tudo (Desconsiderar anteriores e usar apenas o novo arquivo)
+              </option>
               <option value="insert_new" className="bg-slate-900">
                 Inserir apenas novos (Ignorar os já gravados no Supabase)
               </option>
@@ -591,7 +598,9 @@ export const ErpImporterPage: React.FC = () => {
               </option>
             </select>
             <p className="text-[10px] text-slate-500 mt-1">
-              Chave única: (Obra + Documento + Data + Valor + Conta) evita lançamentos repetidos.
+              {strategy === 'replace_all'
+                ? 'Modo Sobrepor: substitui integralmente os lançamentos anteriores desta obra pelos registros do novo arquivo.'
+                : 'Chave única com controle de ocorrências (Obra + Documento + Data + Valor + Conta) evita lançamentos repetidos.'}
             </p>
           </div>
 

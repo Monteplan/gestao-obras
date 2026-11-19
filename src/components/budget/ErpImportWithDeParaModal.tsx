@@ -6,6 +6,10 @@ import {
   findDeParaRule,
 } from '../../lib/atrium-real-data';
 import { ATRIUM_BASE_ORCAMENTO_GROUPS } from '../../lib/atrium-base-orcamento';
+import { executeUnifiedErpImport, saveNewDeParaToSupabase } from '../../lib/erp-unified-importer';
+import { toSupabaseWorkUuid, saveWorkToSupabase } from '../../lib/supabase-sync';
+import { useData } from '../../contexts/DataContext';
+import { DeduplicationStrategy } from '../../types';
 import { formatBRL } from '../../lib/utils';
 import {
   X,
@@ -13,11 +17,7 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   CheckCircle2,
-  Plus,
-  ArrowRight,
-  ShieldCheck,
   Save,
-  HelpCircle,
 } from 'lucide-react';
 
 interface ErpImportWithDeParaModalProps {
@@ -32,6 +32,8 @@ interface ErpImportWithDeParaModalProps {
   }) => void;
   existingRules: DeParaRule[];
   onAddNewRule: (rule: DeParaRule) => void;
+  workId?: string;
+  workName?: string;
 }
 
 interface UnmappedAccountItem {
@@ -50,10 +52,13 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
   onImportComplete,
   existingRules,
   onAddNewRule,
+  workId = 'work-1',
+  workName = 'Atrium Select',
 }) => {
-  if (!isOpen) return null;
-
+  const { works, customDeParaRules, applyUnifiedErpImportResult } = useData();
   const [file, setFile] = useState<File | null>(null);
+  const [parsedObjectRows, setParsedObjectRows] = useState<Record<string, any>[]>([]);
+  const [strategy, setStrategy] = useState<DeduplicationStrategy>('update_existing');
   const [parsing, setParsing] = useState(false);
   const [unmappedAccounts, setUnmappedAccounts] = useState<UnmappedAccountItem[]>([]);
   const [importSummary, setImportSummary] = useState<{
@@ -63,8 +68,81 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
     extraObraAmount: number;
     mappedRowsCount: number;
     unmappedRowsCount: number;
+    insertedCount?: number;
+    preservedCount?: number;
   } | null>(null);
   const [step, setStep] = useState<'upload' | 'mapping' | 'success'>('upload');
+
+  if (!isOpen) return null;
+
+  const runFinalImport = async (
+    targetFile: File,
+    objRows: Record<string, any>[],
+    rules: DeParaRule[],
+    baseSummary: {
+      totalRows: number;
+      totalAmount: number;
+      obraAmount: number;
+      extraObraAmount: number;
+      mappedRowsCount: number;
+      unmappedRowsCount: number;
+    },
+    newRules: DeParaRule[] = []
+  ) => {
+    setParsing(true);
+    try {
+      const targetWorkObj = works.find((w) => w.id === workId);
+      if (targetWorkObj) {
+        await saveWorkToSupabase(targetWorkObj);
+      }
+
+      const supabaseWorkId = toSupabaseWorkUuid(workId);
+      const res = await executeUnifiedErpImport(
+        targetFile.name,
+        objRows,
+        [...customDeParaRules, ...rules],
+        strategy,
+        workId,
+        supabaseWorkId
+      );
+
+      if (!res.success) {
+        alert(res.error || 'Erro ao executar importação do ERP.');
+        setParsing(false);
+        return;
+      }
+
+      applyUnifiedErpImportResult({
+        newCosts: res.newCosts,
+        newRevenues: res.newRevenues,
+        allFileCosts: res.allFileCosts,
+        allFileRevenues: res.allFileRevenues,
+        replaceWorkEntries: res.replaceWorkEntries,
+        workId: res.workId,
+        batch: res.batch,
+      });
+
+      setImportSummary({
+        ...baseSummary,
+        insertedCount: res.insertedEntriesCount,
+        preservedCount: res.alreadyExistingCount,
+      });
+
+      onImportComplete({
+        importedCount: res.insertedEntriesCount,
+        totalAmount: baseSummary.totalAmount,
+        totalObra: baseSummary.obraAmount,
+        totalExtraObra: baseSummary.extraObraAmount,
+        newRulesRegistered: newRules,
+      });
+
+      setStep('success');
+    } catch (err: any) {
+      alert('Erro ao gravar importação: ' + (err?.message || err));
+    } finally {
+      setParsing(false);
+    }
+  };
 
   // Parse Excel file
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,12 +155,13 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
     try {
       const buffer = await selectedFile.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
-      // Pick first sheet or sheet called 'REAL' or 'DADOS'
       const sheetName =
         workbook.SheetNames.find((s) => s.toUpperCase() === 'REAL') ||
         workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, { header: 1 });
+      const objRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+      setParsedObjectRows(objRows);
 
       if (rawRows.length < 2) {
         alert('Planilha vazia ou formato inválido.');
@@ -104,7 +183,7 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
         (h) => h && h.toString().toUpperCase().includes('DOCUMENTO')
       );
 
-      const actualIdxCta = idxCta !== -1 ? idxCta : 5; // fallback index
+      const actualIdxCta = idxCta !== -1 ? idxCta : 5;
       const actualIdxVal = idxVal !== -1 ? idxVal : 10;
       const actualIdxDoc = idxDoc !== -1 ? idxDoc : 2;
 
@@ -155,27 +234,28 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
         }
       }
 
-      setImportSummary({
+      const summaryObj = {
         totalRows: rawRows.length - 1,
         totalAmount,
         obraAmount,
         extraObraAmount,
         mappedRowsCount: mappedCount,
         unmappedRowsCount: unmappedCount,
-      });
+      };
+      setImportSummary(summaryObj);
 
       const unmappedList = Array.from(unmappedMap.values());
       setUnmappedAccounts(unmappedList);
 
       if (unmappedList.length > 0) {
         setStep('mapping');
+        setParsing(false);
       } else {
-        setStep('success');
+        await runFinalImport(selectedFile, objRows, existingRules, summaryObj, []);
       }
     } catch (err: any) {
       console.error(err);
       alert('Erro ao processar planilha: ' + err.message);
-    } finally {
       setParsing(false);
     }
   };
@@ -192,7 +272,9 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
   };
 
   // Confirm mappings and complete import
-  const handleConfirmMappings = () => {
+  const handleConfirmMappings = async () => {
+    if (!file || !importSummary) return;
+
     const newRules: DeParaRule[] = unmappedAccounts.map((item, idx) => ({
       id: `depara-custom-${Date.now()}-${idx}`,
       originalAccount: item.originalAccount,
@@ -201,10 +283,19 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
       budgetStage: item.isObra ? item.selectedStage : undefined,
     }));
 
-    // Register all new rules
-    newRules.forEach((r) => onAddNewRule(r));
+    for (const r of newRules) {
+      onAddNewRule(r);
+      await saveNewDeParaToSupabase({
+        accountName: r.originalAccount,
+        count: 1,
+        totalAmount: 0,
+        groupingCodes: [],
+        suggestedNature: r.isObra ? 'custo_obra' : 'despesa_adm',
+        targetAdjustedAccount: r.adjustedAccount,
+        targetBudgetStage: r.budgetStage,
+      });
+    }
 
-    // Recalculate summary with new mappings
     let addedObra = 0;
     let addedExtra = 0;
     unmappedAccounts.forEach((item) => {
@@ -212,15 +303,19 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
       else addedExtra += item.totalAmount;
     });
 
-    onImportComplete({
-      importedCount: importSummary?.totalRows || 0,
-      totalAmount: importSummary?.totalAmount || 0,
-      totalObra: (importSummary?.obraAmount || 0) + addedObra,
-      totalExtraObra: (importSummary?.extraObraAmount || 0) + addedExtra,
-      newRulesRegistered: newRules,
-    });
+    const updatedSummary = {
+      ...importSummary,
+      obraAmount: importSummary.obraAmount + addedObra,
+      extraObraAmount: importSummary.extraObraAmount + addedExtra,
+    };
 
-    setStep('success');
+    await runFinalImport(
+      file,
+      parsedObjectRows,
+      [...existingRules, ...newRules],
+      updatedSummary,
+      newRules
+    );
   };
 
   return (
@@ -234,10 +329,10 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Importar Planilha do ERP (.xlsx) & Associação de De-Para
+                Importar Planilha do ERP (.xlsx) — {workName}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Importação contínua de lançamentos reais extraídos do ERP sem a coluna de-para.
+                Importação contínua de lançamentos reais extraídos do ERP com controle de duplicidades e associação De-Para.
               </p>
             </div>
           </div>
@@ -253,6 +348,36 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
         <div className="p-6 space-y-5 text-xs">
           {step === 'upload' && (
             <div className="space-y-4">
+              {/* Seletor de Tratamento de Duplicidades */}
+              <div className="bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2">
+                <label className="block font-bold text-slate-800 dark:text-slate-200 text-xs">
+                  Modo de Importação / Tratamento de Duplicidades *
+                </label>
+                <select
+                  value={strategy}
+                  onChange={(e) => setStrategy(e.target.value as DeduplicationStrategy)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+                >
+                  <option value="update_existing">
+                    Preservar e sincronizar novos lançamentos (Recomendado)
+                  </option>
+                  <option value="replace_all">
+                    Sobrepor tudo (Desconsiderar dados anteriores e considerar apenas o novo arquivo)
+                  </option>
+                  <option value="insert_new">
+                    Inserir apenas novos (Ignorar os já gravados no Supabase)
+                  </option>
+                  <option value="reject_duplicates">
+                    Rejeitar lote se houver duplicidade
+                  </option>
+                </select>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {strategy === 'replace_all'
+                    ? 'Modo Sobrepor ativo: todos os lançamentos anteriores desta obra serão substituídos integralmente pelos lançamentos do novo arquivo.'
+                    : 'Controle estrito por ocorrência (Obra + Documento + Data + Valor + Conta): importar o mesmo arquivo mais de uma vez não duplica os valores.'}
+                </p>
+              </div>
+
               <div className="bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300">
                 <span className="font-bold text-sky-900 dark:text-sky-300 block mb-1">
                   Diretrizes de Importação do ERP:
@@ -260,12 +385,11 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
                 <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
                   <li>
                     O arquivo gerado pelo ERP contém as colunas padrão (ex: <code>CD_UP</code>,{' '}
-                    <code>NM_CTA_CST</code>, <code>VL_LNC_CST</code>, <code>DOCUMENTO</code>, etc.) e{' '}
-                    <strong>NÃO contém a coluna De-Para</strong>.
+                    <code>NM_CTA_CST</code>, <code>VL_LNC_CST</code>, <code>DOCUMENTO</code>, etc.).
                   </li>
                   <li>
                     O sistema aplica automaticamente o De-Para mapeando para a conta consolidadora com
-                    base na tabela de <strong>{ATRIUM_DEPARA_RULES.length} regras cadastradas</strong>.
+                    base na tabela de <strong>{existingRules.length} regras cadastradas</strong>.
                   </li>
                   <li>
                     Se aparecerem contas novas no ERP sem De-Para associado, o sistema abrirá a tela de
@@ -281,6 +405,7 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
                   id="erp-file-input"
                   accept=".xlsx, .xls"
                   onChange={handleFileChange}
+                  disabled={parsing}
                   className="hidden"
                 />
                 <label
@@ -292,7 +417,7 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
                   </div>
                   <div>
                     <span className="text-sm font-bold text-slate-900 dark:text-white block">
-                      {parsing ? 'Processando planilha...' : 'Clique para selecionar a planilha do ERP (.xlsx)'}
+                      {parsing ? 'Processando e sincronizando planilha...' : 'Clique para selecionar a planilha do ERP (.xlsx)'}
                     </span>
                     <span className="text-xs text-slate-500 block mt-1">
                       Compatível com relatórios e extratos de contas de custos do ERP
@@ -418,19 +543,30 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
                   Planilha do ERP Importada com Sucesso!
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Os lançamentos foram processados e classificados conforme as regras de De-Para.
+                  {strategy === 'replace_all'
+                    ? `A base de lançamentos de ${workName} foi substituída integralmente pelo novo arquivo.`
+                    : `Sincronização concluída sem duplicidades: ${importSummary?.insertedCount ?? 0} novos inseridos e ${importSummary?.preservedCount ?? 0} existentes preservados.`}
                 </p>
               </div>
 
               {/* Resumo Card */}
               {importSummary && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl mx-auto text-left">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 max-w-2xl mx-auto text-left">
                   <div className="glass-card p-3 rounded-xl border border-slate-200 dark:border-slate-800">
                     <span className="text-[10px] text-slate-500 uppercase font-semibold block">
-                      Total de Lançamentos
+                      Lidos no Arquivo
                     </span>
                     <div className="text-base font-bold text-slate-900 dark:text-white mt-1">
-                      {importSummary.totalRows.toLocaleString('pt-BR')} registros
+                      {importSummary.totalRows.toLocaleString('pt-BR')}
+                    </div>
+                  </div>
+
+                  <div className="glass-card p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold block">
+                      {strategy === 'replace_all' ? 'Gravados (Sobreposto)' : 'Novos Inseridos'}
+                    </span>
+                    <div className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                      {(importSummary.insertedCount ?? 0).toLocaleString('pt-BR')}
                     </div>
                   </div>
 
@@ -469,10 +605,11 @@ export const ErpImportWithDeParaModal: React.FC<ErpImportWithDeParaModalProps> =
           {step === 'mapping' && (
             <button
               onClick={handleConfirmMappings}
+              disabled={parsing}
               className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg shadow-emerald-600/25 transition-all flex items-center space-x-1.5"
             >
               <Save className="w-4 h-4" />
-              <span>Salvar Regras de De-Para e Confirmar Importação</span>
+              <span>{parsing ? 'Salvando...' : 'Salvar Regras de De-Para e Confirmar Importação'}</span>
             </button>
           )}
 
