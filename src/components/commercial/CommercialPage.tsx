@@ -367,21 +367,33 @@ export const CommercialPage: React.FC = () => {
 
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-1.5 text-xs">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500">Saldo a Receber (Vendidas):</span>
+              <span className="text-slate-500">Saldo a Receber Atualizado (INCC):</span>
               <strong className="text-amber-600 dark:text-amber-400 font-mono">
                 {formatBRL(summary.totalReceivable)}
+              </strong>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-amber-600 dark:text-amber-400">
+              <span>Correção INCC Acumulada:</span>
+              <span className="font-mono font-bold">
+                +{formatBRL(Math.max(0, summary.totalReceived + summary.totalReceivable - summary.vgvVendido))}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500">
+              <span>Vendido Atualizado (Pago + Saldo):</span>
+              <strong className="font-mono text-slate-800 dark:text-slate-200">
+                {formatBRL(summary.totalReceived + summary.totalReceivable)}
               </strong>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
               <div
                 className="h-full bg-emerald-500 rounded-full"
-                style={{ width: `${Math.min(100, (summary.totalReceived / (summary.vgvVendido || 1)) * 100)}%` }}
+                style={{ width: `${Math.min(100, (summary.totalReceived / ((summary.totalReceived + summary.totalReceivable) || 1)) * 100)}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
-              <span>% Recebido s/ Vendas:</span>
+              <span>% Recebido s/ Vendido Atualizado:</span>
               <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                {formatPercent((summary.totalReceived / (summary.vgvVendido || 1)) * 100, 2)}
+                {formatPercent((summary.totalReceived / ((summary.totalReceived + summary.totalReceivable) || 1)) * 100, 2)}
               </span>
             </div>
           </div>

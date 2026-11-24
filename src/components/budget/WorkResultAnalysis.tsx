@@ -1,7 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Work, BudgetItem, PurchaseOrder, IncurredCost, Revenue } from '../../types';
 import { formatBRL, formatPercent, formatDateBR } from '../../lib/utils';
 import { useData } from '../../contexts/DataContext';
+import {
+  ATRIUM_COMMERCIAL_UNITS,
+  CommercialUnit,
+  calculateCommercialSummary,
+  getCommercialStorageKey,
+  fetchCommercialDataFromSupabase,
+} from '../../lib/atrium-commercial-data';
 import {
   ATRIUM_DRE_SUMMARY,
   ATRIUM_DRE_LINES,
@@ -62,6 +69,50 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     stageProgressHistory,
   } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
+
+  // Carrega e sincroniza as unidades reais do módulo Comercial (vendasgeral.xlsx / Supabase)
+  const [commercialUnits, setCommercialUnits] = useState<CommercialUnit[]>(() => {
+    const wId = currentWork?.id || 'work-1';
+    try {
+      const saved = localStorage.getItem(getCommercialStorageKey(wId));
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return wId === 'work-1' ? ATRIUM_COMMERCIAL_UNITS : [];
+  });
+
+  useEffect(() => {
+    let active = true;
+    const wId = currentWork?.id || 'work-1';
+    const storageKey = getCommercialStorageKey(wId);
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        setCommercialUnits(JSON.parse(saved));
+      } else {
+        setCommercialUnits(wId === 'work-1' ? ATRIUM_COMMERCIAL_UNITS : []);
+      }
+    } catch {
+      setCommercialUnits(wId === 'work-1' ? ATRIUM_COMMERCIAL_UNITS : []);
+    }
+
+    fetchCommercialDataFromSupabase(wId).then((remoteUnits) => {
+      if (active && remoteUnits && remoteUnits.length > 0) {
+        setCommercialUnits(remoteUnits);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(remoteUnits));
+        } catch {}
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [currentWork?.id]);
+
+  const commercialSummary = useMemo(
+    () => calculateCommercialSummary(commercialUnits, currentWork?.vgv_total),
+    [commercialUnits, currentWork?.vgv_total]
+  );
 
   const [activeSubTab, setActiveSubTab] = useState<'dre' | 'indicadores'>('dre');
   // Modo de comparação: 'total' = Orçamento Global (100%) vs Realizado | 'measured' = Orçado até a Medição EAP vs Realizado
@@ -1022,14 +1073,28 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         </div>
       )}
 
-      {/* SUB-ABA: INDICADORES DO EMPREENDIMENTO (VGV / CUB) - ORÇADO VS. REAL */}
+      {/* SUB-ABA: INDICADORES DO EMPREENDIMENTO (VGV / CUB) - ORÇADO VS. REAL (INTEGRADO AO COMERCIAL) */}
       {activeSubTab === 'indicadores' && (() => {
-        // Indicadores do Empreendimento: Orçado vs. Real (Performance da Obra)
-        const totalUnits = currentWork?.total_units || 80;
-        const unitsSold = currentWork?.units_sold !== undefined ? currentWork.units_sold : 64;
-        const salesPercent = totalUnits > 0 ? (unitsSold / totalUnits) * 100 : 80;
+        const hasCommercialUnits = commercialUnits.length > 0;
 
-        const privateArea = currentWork?.private_area_m2 || 4840.0;
+        // Indicadores do Empreendimento alimentados diretamente pelo Módulo Comercial (vendasgeral.xlsx)
+        const totalUnits = hasCommercialUnits
+          ? commercialSummary.totalUnits
+          : currentWork?.total_units || 80;
+        const unitsSold = hasCommercialUnits
+          ? commercialSummary.soldUnits
+          : currentWork?.units_sold !== undefined
+          ? currentWork.units_sold
+          : 23;
+        const salesPercent = hasCommercialUnits
+          ? commercialSummary.salesPercent
+          : totalUnits > 0
+          ? (unitsSold / totalUnits) * 100
+          : 28.75;
+
+        const privateArea = hasCommercialUnits && commercialSummary.totalPrivateAreaM2 > 0
+          ? commercialSummary.totalPrivateAreaM2
+          : currentWork?.private_area_m2 || 4840.0;
         const constructedArea = currentWork?.total_area_m2 || 6850.0;
         const cubReference = currentWork?.cub_reference_m2 || 2850.0;
 
@@ -1041,28 +1106,57 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
         const executedPrivateArea = privateArea * (progressPercent / 100);
         const executedConstructedArea = constructedArea * (progressPercent / 100);
 
-        // 1. VGV (Valor Geral de Vendas) - Conforme especificação:
-        // VGV real = valor vendido até o momento + valor de unidades em estoque
+        // 1. VGV (Valor Geral de Vendas) - Alimentado pelos dados reais do Comercial:
+        // VGV real = valor vendido até o momento (VL_CNT) + valor de unidades em estoque (SALDO tabela)
         const vgvOrcado = summary.receita.orcadoBruto; // R$ 55.206.000,00
-        const vgvVendido = currentWork?.vgv_sold || 44164800.0; // R$ 44.164.800,00 (Vendido até o momento)
-        const unitsAvailable = 12; // Unidades disponíveis para venda
-        const unitsBlocked = 4; // Unidades bloqueadas para venda
-        const unitsStock = unitsAvailable + unitsBlocked; // 16 unidades em estoque
-        const vgvEstoque = 11041200.0; // R$ 11.041.200,00 (12 un. disponíveis R$ 8.280.900 + 4 un. bloqueadas R$ 2.760.300)
-        const vgvReal = vgvVendido + vgvEstoque; // R$ 55.206.000,00 (Vendido + Estoque)
-        const vgvRealizadoFaturado = summary.receita.realizadoBruto; // R$ 4.789.007,29 (Recebido até o momento na DRE)
-        const vgvAReceber = vgvVendido - vgvRealizadoFaturado; // R$ 39.375.792,71 (Valores a receber das vendas)
+        const vgvVendido = hasCommercialUnits
+          ? commercialSummary.vgvVendido
+          : currentWork?.vgv_sold || 16760154.94;
+        const unitsAvailable = hasCommercialUnits
+          ? commercialSummary.availableUnits
+          : Math.max(0, totalUnits - unitsSold);
+        const unitsBlocked = hasCommercialUnits ? commercialSummary.blockedUnits : 0;
+        const unitsStock = hasCommercialUnits
+          ? commercialSummary.stockUnits
+          : unitsAvailable + unitsBlocked;
+        const vgvEstoque = hasCommercialUnits
+          ? commercialSummary.vgvEstoqueTotal
+          : Math.max(0, vgvOrcado - vgvVendido);
+        const vgvReal = hasCommercialUnits
+          ? commercialSummary.vgvReal
+          : vgvVendido + vgvEstoque;
+        const vgvRealizadoFaturado = summary.receita.realizadoBruto; // Recebido até o momento na DRE
+        const vgvRecebidoComercial = hasCommercialUnits
+          ? commercialSummary.totalReceived
+          : vgvRealizadoFaturado;
+        const vgvAReceber = hasCommercialUnits
+          ? commercialSummary.totalReceivable
+          : Math.max(0, vgvVendido - vgvRealizadoFaturado);
+        const vgvVendidoAtualizado = vgvRecebidoComercial + vgvAReceber;
+        const correcaoInccVendas = Math.max(0, vgvVendidoAtualizado - vgvVendido);
 
-        // 2. Preço Médio por m² - Conforme especificação:
+        // 2. Preço Médio por m² - Alimentado pela metragem real vendida no Comercial:
         // Preço médio do m² = valor vendido dividido pela metragem vendida
-        const metragemVendida = 3872.0; // 64 un. vendidas * 60,5 m² médio
-        const precoMedioM2Vendido = metragemVendida > 0 ? vgvVendido / metragemVendida : 11406.2; // R$ 11.406,20 /m² priv.
-        const precoM2PrivativoOrcado = privateArea > 0 ? vgvOrcado / privateArea : 11406.2; // R$ 11.406,20 /m²
-        const precoM2ConstruidoOrcado = constructedArea > 0 ? vgvOrcado / constructedArea : 8059.27; // R$ 8.059,27 /m²
-        const soldConstructedArea = (constructedArea * (unitsSold / totalUnits));
-        const precoM2ConstruidoRealVendido = soldConstructedArea > 0 ? vgvVendido / soldConstructedArea : 8059.27;
-        const receitaFaturadaPorM2Executado = executedPrivateArea > 0 ? vgvRealizadoFaturado / executedPrivateArea : 2140.77;
-        const ticketMedioVendido = unitsSold > 0 ? vgvVendido / unitsSold : 690075.0;
+        const metragemVendida = hasCommercialUnits
+          ? commercialSummary.soldPrivateAreaM2
+          : privateArea * (unitsSold / Math.max(1, totalUnits));
+        const precoMedioM2Vendido =
+          metragemVendida > 0 ? vgvVendido / metragemVendida : 11406.2;
+        const precoM2PrivativoOrcado = privateArea > 0 ? vgvOrcado / privateArea : 11406.2;
+        const variacaoPrecoM2PrivativoPercent =
+          precoM2PrivativoOrcado > 0
+            ? ((precoMedioM2Vendido - precoM2PrivativoOrcado) / precoM2PrivativoOrcado) * 100
+            : 0;
+        const precoM2ConstruidoOrcado = constructedArea > 0 ? vgvOrcado / constructedArea : 8059.27;
+        const soldConstructedArea =
+          privateArea > 0 ? constructedArea * (metragemVendida / privateArea) : constructedArea * (unitsSold / Math.max(1, totalUnits));
+        const precoM2ConstruidoRealVendido =
+          soldConstructedArea > 0 ? vgvVendido / soldConstructedArea : 8059.27;
+        const variacaoPrecoM2ConstruidoPercent =
+          precoM2ConstruidoOrcado > 0
+            ? ((precoM2ConstruidoRealVendido - precoM2ConstruidoOrcado) / precoM2ConstruidoOrcado) * 100
+            : 0;
+        const ticketMedioVendido = unitsSold > 0 ? vgvVendido / unitsSold : 0;
 
         // 3. Custo de Obra & CUB
         const custoObraOrcado = summary.custoObra.orcado; // R$ 25.705.359,47
@@ -1137,12 +1231,18 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                     <span className="text-slate-500">Unidades em Estoque ({unitsStock} un.):</span>
                     <span className="font-mono text-slate-700 dark:text-slate-300">{unitsAvailable} disp. | {unitsBlocked} bloq.</span>
                   </div>
+                  <div className="flex items-center justify-between text-[10px] text-amber-600 dark:text-amber-400 pt-1 border-t border-slate-100 dark:border-slate-800/60">
+                    <span>Correção INCC s/ Vendas:</span>
+                    <span className="font-mono font-bold">
+                      +{formatBRL(correcaoInccVendas)} (Atualiz.: {formatBRL(vgvVendidoAtualizado)})
+                    </span>
+                  </div>
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">Recebido até o Momento (DRE):</span>
-                    <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{formatBRL(vgvRealizadoFaturado)}</strong>
+                    <span className="text-slate-500">Recebido das Vendas (Comercial):</span>
+                    <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{formatBRL(vgvRecebidoComercial)}</strong>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400">
-                    <span>Valores a Receber das Vendas:</span>
+                    <span>Saldo a Receber Atualizado (INCC):</span>
                     <span className="font-mono text-sky-600 dark:text-sky-400 font-semibold">{formatBRL(vgvAReceber)}</span>
                   </div>
                 </div>
@@ -1173,7 +1273,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-slate-500">Cálculo Exato:</span>
                     <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300">
-                      R$ 44,16M ÷ {metragemVendida.toLocaleString('pt-BR')} m²
+                      {formatBRL(vgvVendido)} ÷ {metragemVendida.toLocaleString('pt-BR')} m²
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
@@ -1189,7 +1289,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                     <span className="font-mono text-slate-400">{formatBRL(precoM2ConstruidoRealVendido)} /m²</span>
                   </div>
                   <div className="text-[10px] text-slate-500">
-                    Metragem Vendida: {metragemVendida.toLocaleString('pt-BR')} m² (64 un.) de {privateArea.toLocaleString('pt-BR')} m²
+                    Metragem Vendida: {metragemVendida.toLocaleString('pt-BR')} m² ({unitsSold} un.) de {privateArea.toLocaleString('pt-BR')} m²
                   </div>
                 </div>
               </div>
@@ -1312,21 +1412,23 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                       <td className="p-3.5 font-semibold text-slate-900 dark:text-white">
                         <div className="flex items-center space-x-2">
                           <Home className="w-4 h-4 text-sky-500 shrink-0" />
-                          <span>VGV Total do Empreendimento</span>
+                          <span>VGV Total do Empreendimento (Vendido + Estoque)</span>
                         </div>
                       </td>
-                      <td className="p-3.5 text-slate-500 text-[11px]">80 unidades ({privateArea.toLocaleString('pt-BR')} m²)</td>
+                      <td className="p-3.5 text-slate-500 text-[11px]">{totalUnits} unidades ({privateArea.toLocaleString('pt-BR')} m²)</td>
                       <td className="p-3.5 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatBRL(vgvOrcado)}</td>
                       <td className="p-3.5 text-right font-mono font-bold text-sky-600 dark:text-sky-400">
-                        {formatBRL(vgvVendido)}
-                        <span className="block text-[10px] text-slate-400 font-normal">Faturado: {formatBRL(vgvRealizadoFaturado)}</span>
+                        {formatBRL(vgvReal)}
+                        <span className="block text-[10px] text-slate-400 font-normal">
+                          Vendido: {formatBRL(vgvVendido)} | Estoque: {formatBRL(vgvEstoque)}
+                        </span>
                       </td>
                       <td className="p-3.5 text-right font-mono text-slate-600 dark:text-slate-400">
-                        {formatPercent(salesPercent, 1)} comercializado
+                        {unitsSold} de {totalUnits} un. ({formatPercent(salesPercent, 1)})
                       </td>
                       <td className="p-3.5 text-center">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-400">
-                          80% Vendido
+                          {formatPercent(salesPercent, 1)} Vendido
                         </span>
                       </td>
                     </tr>
@@ -1336,18 +1438,18 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                       <td className="p-3.5 font-semibold text-slate-900 dark:text-white">
                         <div className="flex items-center space-x-2">
                           <Ruler className="w-4 h-4 text-blue-500 shrink-0" />
-                          <span>Preço Médio por m² Privativo</span>
+                          <span>Preço Médio por m² Privativo (Vendido)</span>
                         </div>
                       </td>
-                      <td className="p-3.5 text-slate-500 text-[11px]">R$/m² privativo</td>
+                      <td className="p-3.5 text-slate-500 text-[11px]">R$/m² privativo ({metragemVendida.toLocaleString('pt-BR')} m² vendidos)</td>
                       <td className="p-3.5 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatBRL(precoM2PrivativoOrcado)}</td>
                       <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBRL(precoMedioM2Vendido)}</td>
-                      <td className="p-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400">
-                        0,00% (100% da tabela)
+                      <td className={`p-3.5 text-right font-mono font-bold ${variacaoPrecoM2PrivativoPercent >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500'}`}>
+                        {variacaoPrecoM2PrivativoPercent >= 0 ? '+' : ''}{formatPercent(variacaoPrecoM2PrivativoPercent, 2)} s/ tabela base
                       </td>
                       <td className="p-3.5 text-center">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
-                          Aderente à Tabela
+                          {variacaoPrecoM2PrivativoPercent > 0 ? 'Valorização s/ Tabela' : 'Aderente à Tabela'}
                         </span>
                       </td>
                     </tr>
@@ -1363,10 +1465,12 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
                       <td className="p-3.5 text-slate-500 text-[11px]">R$/m² área construída ({constructedArea.toLocaleString('pt-BR')} m²)</td>
                       <td className="p-3.5 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatBRL(precoM2ConstruidoOrcado)}</td>
                       <td className="p-3.5 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{formatBRL(precoM2ConstruidoRealVendido)}</td>
-                      <td className="p-3.5 text-right font-mono text-slate-500">0,00%</td>
+                      <td className={`p-3.5 text-right font-mono ${variacaoPrecoM2ConstruidoPercent >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>
+                        {variacaoPrecoM2ConstruidoPercent >= 0 ? '+' : ''}{formatPercent(variacaoPrecoM2ConstruidoPercent, 2)}
+                      </td>
                       <td className="p-3.5 text-center">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-400">
-                          Em Linha
+                          {variacaoPrecoM2ConstruidoPercent > 0 ? 'Acima do Orçado' : 'Em Linha'}
                         </span>
                       </td>
                     </tr>
