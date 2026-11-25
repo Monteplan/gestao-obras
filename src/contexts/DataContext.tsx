@@ -90,6 +90,9 @@ interface DataContextType {
   physicalProgressEntries: PhysicalProgressEntry[];
   stageProgressHistory: StageProgressHistory[];
   inccAdjustments: BudgetIndexAdjustment[];
+  measurementCompetencyByWork: Record<string, string>;
+  getWorkMeasurementCompetency: (workId: string) => string;
+  setWorkMeasurementCompetency: (workId: string, periodKey: string) => void;
 
   // Works CRUD
   addWork: (work: Omit<Work, 'id' | 'created_at' | 'updated_at' | 'progress_percent'>) => Work;
@@ -276,9 +279,47 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [budgetToErpMappings, setBudgetToErpMappings] = useState<BudgetToErpMapping[]>(() => loadInitial('budget_to_erp_mappings', INITIAL_DE_PARA_1));
   const [erpToBudgetTotalizerMappings, setErpToBudgetTotalizerMappings] = useState<ErpToBudgetTotalizerMapping[]>(() => loadInitial('erp_to_budget_totalizer_mappings', INITIAL_DE_PARA_2));
   const [physicalProgressEntries, setPhysicalProgressEntries] = useState<PhysicalProgressEntry[]>(() => loadInitial('physical_progress_entries', INITIAL_PHYSICAL_PROGRESS_ENTRIES));
-  const [stageProgressHistory, setStageProgressHistory] = useState<StageProgressHistory[]>(() => loadInitial('stage_progress_history', INITIAL_STAGE_PROGRESS_HISTORY));
+  const [stageProgressHistory, setStageProgressHistory] = useState<StageProgressHistory[]>(() => {
+    try {
+      const permanentHist = localStorage.getItem('gestao_obras_custom_stage_history');
+      if (permanentHist) {
+        const parsed = JSON.parse(permanentHist);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return loadInitial('stage_progress_history', INITIAL_STAGE_PROGRESS_HISTORY);
+  });
   const [inccAdjustments, setInccAdjustments] = useState<BudgetIndexAdjustment[]>(() => loadInitial('incc_adjustments', []));
   const [customDeParaRules, setCustomDeParaRules] = useState<DeParaRule[]>(() => loadInitial('custom_depara_rules', []));
+  const [measurementCompetencyByWork, setMeasurementCompetencyByWork] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('gestao_obras_measurement_competency');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      'work-1': '2026-10',
+      'work-2': '2026-10',
+      'work-3': '2026-10',
+      'work-4': '2026-10',
+      'work-5': '2026-10',
+      'work-6': '2026-10',
+      'work-7': '2026-10',
+    };
+  });
+
+  const getWorkMeasurementCompetency = (workId: string): string => {
+    return measurementCompetencyByWork[workId] || '2026-10';
+  };
+
+  const setWorkMeasurementCompetency = (workId: string, periodKey: string) => {
+    setMeasurementCompetencyByWork((prev) => {
+      const next = { ...prev, [workId]: periodKey };
+      try {
+        localStorage.setItem('gestao_obras_measurement_competency', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Estados de Sincronização com Supabase Cloud
   const [isSyncingWithSupabase, setIsSyncingWithSupabase] = useState<boolean>(false);
@@ -389,11 +430,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Limpeza preventiva de versões antigas de cache para recuperar a cota de 5MB do navegador
   useEffect(() => {
     try {
+      const protectedKeys = new Set([
+        'gestao_obras_v2_user_profiles',
+        'gestao_obras_session_user',
+        'gestao_obras_custom_stage_progress',
+        'gestao_obras_custom_stage_history',
+        'gestao_obras_custom_work_metadata',
+        'gestao_obras_measurement_competency',
+      ]);
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('gestao_obras_') && !k.startsWith(`gestao_obras_${SCHEMA_VERSION}_`)) {
-          if (k !== 'gestao_obras_v2_user_profiles' && k !== 'gestao_obras_session_user') {
+          if (!protectedKeys.has(k)) {
             keysToRemove.push(k);
           }
         }
@@ -730,7 +779,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setStages(nextStages);
     recalculateWorkProgress(target.work_id, nextStages);
-    setStageProgressHistory(prev => [...historyEntriesToRecord, ...prev]);
+    setStageProgressHistory(prev => {
+      const updatedHist = [...historyEntriesToRecord, ...prev];
+      try {
+        localStorage.setItem('gestao_obras_custom_stage_history', JSON.stringify(updatedHist));
+      } catch {}
+      return updatedHist;
+    });
 
     // Salva progresso físico manual em chave protegida permanente
     try {
@@ -742,6 +797,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       localStorage.setItem('gestao_obras_custom_stage_progress', JSON.stringify(progressMap));
     } catch {}
+
+    // Sincroniza o novo avanço físico ponderado da obra na tabela public.works do Supabase
+    const targetWorkObj = works.find(w => w.id === target.work_id);
+    if (targetWorkObj && isSupabaseConfigured() && supabase) {
+      const workAfterStages = nextStages.filter(s => s.work_id === target.work_id);
+      const newWeightedProgress = calculateWeightedProgress(workAfterStages);
+      saveWorkToSupabase({
+        ...targetWorkObj,
+        progress_percent: newWeightedProgress,
+        pco_physical_progress: newWeightedProgress,
+      }).catch(console.warn);
+    }
     addAuditLog(
       'Atualizar Progresso',
       'stages',
@@ -1934,6 +2001,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         physicalProgressEntries,
         stageProgressHistory,
         inccAdjustments,
+        measurementCompetencyByWork,
+        getWorkMeasurementCompetency,
+        setWorkMeasurementCompetency,
         pcoImportProfiles,
         importPcoWorkbook,
         addWork,

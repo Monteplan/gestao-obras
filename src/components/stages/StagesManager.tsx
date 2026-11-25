@@ -33,7 +33,16 @@ interface StagesManagerProps {
 }
 
 export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) => {
-  const { works, stages, stageProgressHistory, addStage, updateStageProgress, deleteStage } = useData();
+  const {
+    works,
+    stages,
+    stageProgressHistory,
+    addStage,
+    updateStageProgress,
+    deleteStage,
+    getWorkMeasurementCompetency,
+    setWorkMeasurementCompetency,
+  } = useData();
   const { canEdit } = useAuth();
 
   const [currentWorkId, setCurrentWorkId] = useState<string>(selectedWorkId || works[0]?.id || '');
@@ -237,6 +246,24 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
               {works.map((w) => (
                 <option key={w.id} value={w.id} className="bg-slate-900">{w.name} ({w.code})</option>
               ))}
+            </select>
+          </div>
+
+          <div className="bg-slate-900/90 px-3 py-1.5 rounded-xl border border-cyan-500/40 text-xs flex items-center space-x-2">
+            <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-slate-400 font-medium">Mês Ref. Medição:</span>
+            <select
+              value={getWorkMeasurementCompetency(currentWorkId)}
+              onChange={(e) => setWorkMeasurementCompetency(currentWorkId, e.target.value)}
+              className="bg-transparent text-cyan-300 font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="2026-09" className="bg-slate-900 text-white">Set/2026</option>
+              <option value="2026-10" className="bg-slate-900 text-white">Out/2026</option>
+              <option value="2026-11" className="bg-slate-900 text-white">Nov/2026</option>
+              <option value="2026-12" className="bg-slate-900 text-white">Dez/2026</option>
+              <option value="2027-01" className="bg-slate-900 text-white">Jan/2027</option>
+              <option value="2027-02" className="bg-slate-900 text-white">Fev/2027</option>
+              <option value="2027-03" className="bg-slate-900 text-white">Mar/2027</option>
             </select>
           </div>
 

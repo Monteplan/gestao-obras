@@ -67,6 +67,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     importBatches,
     lastSyncedAt,
     stageProgressHistory,
+    getWorkMeasurementCompetency,
   } = useData();
   const currentWork = propWork || works.find(w => w.id === 'work-1' || w.code === 'OBR-001' || w.name.toLowerCase().includes('atrium')) || works[0];
 
@@ -183,31 +184,20 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
     const monthsAbbr = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
     const isAtrium = currentWork?.id === 'work-1' || currentWork?.code === 'OBR-001';
 
-    // 1. Mês de referência da Medição Física EAP
-    let measurementMonthLabel = isAtrium ? 'SET/2026' : 'ATUAL';
-    let measurementDateDisplay = isAtrium ? '30/09/2026' : formatDateBR(currentWork?.updated_at);
+    // 1. Mês de referência da Medição Física EAP (sincronizado com Etapas & EAP e Acomp. Físico)
+    const competencyKey = getWorkMeasurementCompetency(currentWork?.id || 'work-1');
+    const compParts = (competencyKey || '2026-10').split('-');
+    const compMonthIdx = compParts.length === 2 ? parseInt(compParts[1], 10) - 1 : 9;
+    let measurementMonthLabel =
+      compMonthIdx >= 0 && compMonthIdx < 12
+        ? `${monthsAbbr[compMonthIdx]}/${compParts[0]}`
+        : 'OUT/2026';
+    let measurementDateDisplay = 'Atualizado em Nov/2026';
     const workStageHistory = (stageProgressHistory || []).filter((h) => h.work_id === currentWork?.id);
     if (workStageHistory.length > 0) {
       const latestHist = workStageHistory.reduce((a, b) => (a.created_at > b.created_at ? a : b));
       const d = latestHist.created_at.slice(0, 10);
-      const parts = d.split('-');
-      if (parts.length === 3) {
-        const mIdx = parseInt(parts[1], 10) - 1;
-        if (mIdx >= 0 && mIdx < 12) {
-          measurementMonthLabel = `${monthsAbbr[mIdx]}/${parts[0]}`;
-          measurementDateDisplay = formatDateBR(d);
-        }
-      }
-    } else if (currentWork?.pco_last_imported_at) {
-      const d = currentWork.pco_last_imported_at.slice(0, 10);
-      const parts = d.split('-');
-      if (parts.length === 3) {
-        const mIdx = parseInt(parts[1], 10) - 1;
-        if (mIdx >= 0 && mIdx < 12) {
-          measurementMonthLabel = `${monthsAbbr[mIdx]}/${parts[0]}`;
-          measurementDateDisplay = formatDateBR(d);
-        }
-      }
+      measurementDateDisplay = formatDateBR(d);
     }
 
     // 2. Último lançamento financeiro real da obra (Data de corte do ERP)
@@ -268,7 +258,7 @@ export const WorkResultAnalysis: React.FC<WorkResultAnalysisProps> = ({ work: pr
       latestBatchFileName: latestBatch?.file_name,
       totalEntriesCount: workCosts.length + workRevs.length,
     };
-  }, [currentWork, incurredCosts, revenues, importBatches, lastSyncedAt, stageProgressHistory]);
+  }, [currentWork, incurredCosts, revenues, importBatches, lastSyncedAt, stageProgressHistory, getWorkMeasurementCompetency]);
 
   // Filtragem da DRE com todas as 200+ contas recalculadas dinamicamente
   const filteredDreLines = useMemo(() => {
