@@ -42,6 +42,7 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
     deleteStage,
     getWorkMeasurementCompetency,
     setWorkMeasurementCompetency,
+    getStagesForCompetency,
   } = useData();
   const { canEdit } = useAuth();
 
@@ -79,7 +80,11 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
   });
 
   const activeWork = works.find((w) => w.id === currentWorkId);
-  const workStages = stages.filter((s) => s.work_id === currentWorkId);
+  const currentCompetency = getWorkMeasurementCompetency(currentWorkId);
+  const workStages = useMemo(
+    () => getStagesForCompetency(currentWorkId, currentCompetency),
+    [getStagesForCompetency, currentWorkId, currentCompetency, stages]
+  );
   const rootStages = workStages.filter((s) => !s.parent_id);
   const hierarchicalStages = buildStageHierarchy(workStages);
 

@@ -58,19 +58,34 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
     stageProgressHistory,
     getWorkMeasurementCompetency,
     setWorkMeasurementCompetency,
+    getStagesForCompetency,
   } = useData();
   const [activeTab, setActiveTab] = useState<'geral' | 'diretos' | 'indiretos'>('geral');
   const [searchTerm, setSearchTerm] = useState('');
 
   const isAtrium = work.id === 'work-1' || work.code === 'OBR-001' || work.code === 'ATRIUM';
+  const targetWorkId = isAtrium ? 'work-1' : work.id;
   const currentCompetencyKey = getWorkMeasurementCompetency(work.id);
   const currentCompetencyShort = formatPeriodKeyShort(currentCompetencyKey); // Ex: "Out/26"
   const currentCompetencyLong = formatPeriodKeyLong(currentCompetencyKey);   // Ex: "Out/2026"
 
-  // 1. Obter etapas ativas da obra no DataContext (100% interligadas com a aba Etapas & EAP)
+  // Helper para obter o mês anterior no formato YYYY-MM
+  const getPreviousPeriodKey = (periodKey: string): string => {
+    const parts = (periodKey || '2026-10').split('-');
+    let y = parseInt(parts[0], 10) || 2026;
+    let m = parseInt(parts[1], 10) || 10;
+    m -= 1;
+    if (m < 1) {
+      m = 12;
+      y -= 1;
+    }
+    return `${y}-${String(m).padStart(2, '0')}`;
+  };
+
+  // 1. Obter etapas da obra para a Competência Mensal selecionada (Snapshot Mensal da EAP)
   const workStages = useMemo(
-    () => stages.filter((s) => s.work_id === work.id || (isAtrium && s.work_id === 'work-1')),
-    [stages, work.id, isAtrium]
+    () => getStagesForCompetency(targetWorkId, currentCompetencyKey),
+    [getStagesForCompetency, targetWorkId, currentCompetencyKey, stages]
   );
   const activeRootStages = useMemo(
     () => workStages.filter((s) => !s.parent_id),
@@ -86,7 +101,7 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
     [activeRootStages, isAtrium]
   );
 
-  // 2. Cálculo do Avanço Físico Ponderado Total da Obra em Tempo Real (a partir de Etapas & EAP)
+  // 2. Cálculo do Avanço Físico Ponderado Total da Obra no Mês de Competência Selecionado
   const dynamicWeightedProgress =
     currentRootList.length > 0
       ? calculateWeightedProgress(currentRootList)
@@ -95,6 +110,14 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
     dynamicWeightedProgress > 100
       ? Number((dynamicWeightedProgress / 100).toFixed(2))
       : Number(dynamicWeightedProgress.toFixed(2));
+
+  // Helper que calcula o realizado acumulado ponderado em qualquer competência mensal (YYYY-MM)
+  const getWeightedProgressAtPeriod = (periodKey: string): number => {
+    const periodStages = getStagesForCompetency(targetWorkId, periodKey).filter((s) => !s.parent_id);
+    if (periodStages.length === 0) return execAcc;
+    const val = calculateWeightedProgress(periodStages);
+    return val > 100 ? Number((val / 100).toFixed(2)) : Number(val.toFixed(2));
+  };
 
   // 3. Curva S Mensal e Acumulada (Padronizada para o Atrium e para todas as demais obras como Unique, Bela Vitta, etc.)
   const sCurvePeriods: MonthlyPlannedPeriod[] = useMemo(() => {
@@ -130,8 +153,15 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
         if (p.period_key === currentCompetencyKey) {
           return { ...p, actual_percent_accumulated: execAcc };
         }
-        if (p.period_key < currentCompetencyKey && p.actual_percent_accumulated === undefined) {
-          return { ...p, actual_percent_accumulated: Number(Math.min(execAcc, p.planned_percent_accumulated * 0.95).toFixed(2)) };
+        if (p.period_key < currentCompetencyKey) {
+          const snapAcc = getWeightedProgressAtPeriod(p.period_key);
+          return {
+            ...p,
+            actual_percent_accumulated:
+              snapAcc > 0
+                ? snapAcc
+                : p.actual_percent_accumulated ?? Number(Math.min(execAcc, p.planned_percent_accumulated * 0.95).toFixed(2)),
+          };
         }
         if (p.period_key > currentCompetencyKey) {
           return { ...p, actual_percent_accumulated: undefined };
@@ -187,8 +217,10 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
       if (idx === currIdxInAll) {
         actualVal = execAcc;
       } else if (idx < currIdxInAll && currIdxInAll > 0) {
+        const snapAcc = getWeightedProgressAtPeriod(item.key);
         const ratio = (idx + 1) / (currIdxInAll + 1);
-        actualVal = Number((execAcc * (3 * ratio * ratio - 2 * ratio * ratio * ratio)).toFixed(2));
+        const sigmoideFallback = Number((execAcc * (3 * ratio * ratio - 2 * ratio * ratio * ratio)).toFixed(2));
+        actualVal = snapAcc > 0 && snapAcc < execAcc ? snapAcc : sigmoideFallback;
       }
 
       return {
@@ -343,47 +375,38 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
   const physicalDeviation = Number((execAcc - plannedAcc).toFixed(2));
   const physicalBalance = Number(Math.max(0, 100 - execAcc).toFixed(2));
 
-  // Calcula a produção física do mês e a data da última atualização na aba Etapas & EAP
+  // Calcula a produção física do mês selecionado (diferença entre o acumulado da competência selecionada e o mês anterior) e a data de atualização
   const { executedMonth, lastUpdateDisplay } = useMemo(() => {
     const workHistory = (stageProgressHistory || []).filter((h) => h.work_id === work.id && !h.is_substage);
-    let updateLabel = 'Atualizado em Nov/2026';
+    let updateLabel = `Fechamento ${currentCompetencyLong}`;
 
-    if (workHistory.length > 0) {
+    if (currentCompetencyKey >= '2026-10' && workHistory.length > 0) {
       const latest = workHistory.reduce((a, b) => (a.created_at > b.created_at ? a : b));
       const dt = new Date(latest.created_at);
       if (!isNaN(dt.getTime())) {
         const mAbbr = MONTHS_SHORT[dt.getMonth()] || 'Nov';
         updateLabel = `Atualiz. em ${formatDateBR(latest.created_at.slice(0, 10))} (${mAbbr}/${dt.getFullYear()})`;
       }
+    } else if (isAtrium && currentCompetencyKey === '2026-09') {
+      updateLabel = 'Base Oficial PCO Set/2026';
+    } else if (currentCompetencyKey < '2026-09') {
+      updateLabel = `Histórico Fechado (${currentCompetencyShort})`;
     }
 
-    // Se for o Atrium e o avanço acumulado subiu além da base de Set/26 (46.2153%), a diferença é a produção medida em Out/26
-    if (isAtrium) {
-      if (currentCompetencyKey === '2026-09') {
-        return { executedMonth: 2.56, lastUpdateDisplay: 'Base PCO Set/2026' };
-      }
-      const deltaOverSept = Number((execAcc - 46.2153).toFixed(2));
-      if (deltaOverSept > 0.01) {
-        return { executedMonth: deltaOverSept, lastUpdateDisplay: updateLabel };
-      }
-      // Se houver histórico de apontamentos na EAP, soma o ganho ponderado na obra
-      if (workHistory.length > 0) {
-        const totalWorkGain = workHistory.reduce((acc, h) => {
-          const gain = (h.work_progress_after ?? 0) - (h.work_progress_before ?? 0);
-          return acc + (gain > 0 ? gain : 0);
-        }, 0);
-        if (totalWorkGain > 0.01) {
-          return { executedMonth: Number(totalWorkGain.toFixed(2)), lastUpdateDisplay: updateLabel };
-        }
-      }
-      return {
-        executedMonth: activeCurvePeriod?.planned_percent_month || 2.56,
-        lastUpdateDisplay: updateLabel,
-      };
+    const prevKey = getPreviousPeriodKey(currentCompetencyKey);
+    const prevExecAcc = getWeightedProgressAtPeriod(prevKey);
+    const deltaOverPrev = Number((execAcc - prevExecAcc).toFixed(2));
+
+    if (isAtrium && currentCompetencyKey === '2026-09' && Math.abs(execAcc - 46.22) < 0.05) {
+      return { executedMonth: 2.56, lastUpdateDisplay: updateLabel };
     }
 
-    // Para demais obras (Unique, etc.)
-    if (workHistory.length > 0) {
+    if (deltaOverPrev > 0.01) {
+      return { executedMonth: deltaOverPrev, lastUpdateDisplay: updateLabel };
+    }
+
+    // Fallback: se o snapshot atual for igual ao do mês anterior (ainda sem medição lançada no mês), exibe 0.00% se for mês futuro ou o ganho histórico
+    if (currentCompetencyKey >= '2026-10' && workHistory.length > 0) {
       const totalWorkGain = workHistory.reduce((acc, h) => {
         const gain = (h.work_progress_after ?? 0) - (h.work_progress_before ?? 0);
         return acc + (gain > 0 ? gain : 0);
@@ -392,11 +415,12 @@ export const AtriumPhysicalDashboard: React.FC<AtriumPhysicalDashboardProps> = (
         return { executedMonth: Number(totalWorkGain.toFixed(2)), lastUpdateDisplay: updateLabel };
       }
     }
+
     return {
-      executedMonth: activeCurvePeriod?.planned_percent_month || 2.45,
+      executedMonth: activeCurvePeriod?.planned_percent_month || 2.56,
       lastUpdateDisplay: updateLabel,
     };
-  }, [stageProgressHistory, work.id, isAtrium, currentCompetencyKey, execAcc, activeCurvePeriod]);
+  }, [stageProgressHistory, work.id, isAtrium, currentCompetencyKey, currentCompetencyLong, currentCompetencyShort, execAcc, activeCurvePeriod, stages]);
 
   // 5. Divisão Dinâmica de Indiretos vs Diretos para qualquer obra
   const isIndirectStage = (s: { code: string; name: string }) => {

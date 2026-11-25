@@ -93,6 +93,7 @@ interface DataContextType {
   measurementCompetencyByWork: Record<string, string>;
   getWorkMeasurementCompetency: (workId: string) => string;
   setWorkMeasurementCompetency: (workId: string, periodKey: string) => void;
+  getStagesForCompetency: (workId: string, periodKey?: string) => Stage[];
 
   // Works CRUD
   addWork: (work: Omit<Work, 'id' | 'created_at' | 'updated_at' | 'progress_percent'>) => Work;
@@ -307,6 +308,184 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   });
 
+  // Snapshots Mensais de Medição da EAP por Competência ("${workId}::${periodKey}" -> { stageId: progress_percent })
+  const [stageSnapshotsByCompetency, setStageSnapshotsByCompetency] = useState<Record<string, Record<string, number>>>(() => {
+    const baseSnapshots: Record<string, Record<string, number>> = {};
+
+    // 1. Base Oficial Set/2026 (2026-09) para todas as obras a partir do INITIAL_STAGES (PCO Set/26 para Atrium = 46,22%)
+    const workIds = Array.from(new Set(INITIAL_STAGES.map(s => s.work_id)));
+    const atriumHistoricalTargets: Record<string, number> = {
+      '2026-04': 34.80,
+      '2026-05': 37.10,
+      '2026-06': 39.45,
+      '2026-07': 41.80,
+      '2026-08': 43.66,
+    };
+
+    let customProgressMap: Record<string, number> = {};
+    try {
+      const savedMap = localStorage.getItem('gestao_obras_custom_stage_progress');
+      if (savedMap) {
+        customProgressMap = JSON.parse(savedMap);
+      }
+    } catch {}
+
+    workIds.forEach(wId => {
+      const wInitialStages = INITIAL_STAGES.filter(s => s.work_id === wId);
+      const septMap: Record<string, number> = {};
+      const octMap: Record<string, number> = {};
+
+      wInitialStages.forEach(s => {
+        const baseProg = s.progress_percent || 0;
+        if (wId === 'work-1') {
+          // Atrium: Set/2026 é o baseline oficial do PCO (46,22%)
+          septMap[s.id] = baseProg;
+          // Out/2026 traz os apontamentos atualizados na aba Etapas & EAP (ou mantém base se não editada)
+          octMap[s.id] = customProgressMap[s.id] !== undefined ? customProgressMap[s.id] : baseProg;
+        } else {
+          // Demais obras (Unique, Bela Vitta, etc.): Out/2026 é a medição atual e Set/2026 é o fechamento anterior (~93% do acumulado de Out/26)
+          const octProg = customProgressMap[s.id] !== undefined ? customProgressMap[s.id] : baseProg;
+          octMap[s.id] = octProg;
+          septMap[s.id] = octProg === 100 ? 100 : Number((octProg * 0.93).toFixed(2));
+        }
+      });
+
+      baseSnapshots[`${wId}::2026-09`] = septMap;
+      baseSnapshots[`${wId}::2026-10`] = octMap;
+
+      // Gera snapshots históricos proporcionais para Abr/26 a Ago/26
+      if (wId === 'work-1') {
+        Object.entries(atriumHistoricalTargets).forEach(([pKey, targetAcc]) => {
+          const factor = targetAcc / 46.2153;
+          const histMap: Record<string, number> = {};
+          wInitialStages.forEach(s => {
+            histMap[s.id] = Number(Math.min(100, (s.progress_percent || 0) * factor).toFixed(2));
+          });
+          baseSnapshots[`work-1::${pKey}`] = histMap;
+        });
+      } else {
+        const otherHistFactors: Record<string, number> = {
+          '2026-05': 0.65,
+          '2026-06': 0.72,
+          '2026-07': 0.79,
+          '2026-08': 0.86,
+        };
+        Object.entries(otherHistFactors).forEach(([pKey, factor]) => {
+          const histMap: Record<string, number> = {};
+          wInitialStages.forEach(s => {
+            const octProg = octMap[s.id] ?? (s.progress_percent || 0);
+            histMap[s.id] = Number(Math.min(100, octProg * factor).toFixed(2));
+          });
+          baseSnapshots[`${wId}::${pKey}`] = histMap;
+        });
+      }
+    });
+
+    try {
+      const savedSnapshotsRaw = localStorage.getItem('gestao_obras_stage_snapshots_by_competency');
+      if (savedSnapshotsRaw) {
+        const parsed = JSON.parse(savedSnapshotsRaw);
+        if (parsed && typeof parsed === 'object') {
+          Object.assign(baseSnapshots, parsed);
+          // Garante que o snapshot de Out/2026 reflita o gestao_obras_custom_stage_progress caso tenha sido editado antes desta versão
+          if (Object.keys(customProgressMap).length > 0 && !parsed['work-1::2026-10_migrated']) {
+            const w1Initial = INITIAL_STAGES.filter(s => s.work_id === 'work-1');
+            const octMerged: Record<string, number> = { ...(baseSnapshots['work-1::2026-10'] || {}) };
+            w1Initial.forEach(s => {
+              if (customProgressMap[s.id] !== undefined) {
+                octMerged[s.id] = customProgressMap[s.id];
+              }
+            });
+            baseSnapshots['work-1::2026-10'] = octMerged;
+            // Restaura 2026-09 do Atrium para o baseline puro do PCO Set/26 (46,22%)
+            const septPure: Record<string, number> = {};
+            w1Initial.forEach(s => {
+              septPure[s.id] = s.progress_percent || 0;
+            });
+            baseSnapshots['work-1::2026-09'] = septPure;
+          }
+        }
+      }
+    } catch {}
+
+    return baseSnapshots;
+  });
+
+  const buildStagesWithSnapshotMap = (
+    workStagesList: Stage[],
+    snapMap: Record<string, number>
+  ): Stage[] => {
+    // 1. Aplica os percentuais diretamente do snapshot
+    let mapped = workStagesList.map(s => {
+      const pct = snapMap[s.id] !== undefined ? snapMap[s.id] : (s.progress_percent || 0);
+      const status: Stage['status'] = pct >= 100 ? 'concluida' : pct > 0 ? 'em_andamento' : 'nao_iniciada';
+      return {
+        ...s,
+        progress_percent: pct,
+        status,
+      };
+    });
+
+    // 2. Recalcula rollup de macroetapas que possuem subetapas caso o snapshot tenha editado subetapas
+    const parentIds = new Set(mapped.filter(s => s.parent_id).map(s => s.parent_id!));
+    if (parentIds.size > 0) {
+      mapped = mapped.map(s => {
+        if (!s.parent_id && parentIds.has(s.id)) {
+          // Se o snapshot já tem um valor explícito para a macroetapa e as subetapas não diferem, preserva;
+          // caso contrário consolida pelas subetapas
+          const children = mapped.filter(c => c.parent_id === s.id);
+          const totalW = children.reduce((acc, c) => acc + (c.weight_percent || 0), 0);
+          if (totalW > 0) {
+            const wSum = children.reduce((acc, c) => acc + (c.progress_percent || 0) * (c.weight_percent || 0), 0);
+            const calcPct = Math.round((wSum / totalW) * 100) / 100;
+            // Se o usuário editou a macroetapa diretamente (ex: no PCO Set/26 onde subetapas têm valores próprios),
+            // respeita o valor do snapshot da macroetapa se ele existir no snapMap
+            const finalPct = snapMap[s.id] !== undefined ? snapMap[s.id] : calcPct;
+            return {
+              ...s,
+              progress_percent: finalPct,
+              status: finalPct >= 100 ? 'concluida' : finalPct > 0 ? 'em_andamento' : 'nao_iniciada',
+            };
+          }
+        }
+        return s;
+      });
+    }
+    return mapped;
+  };
+
+  const getStagesForCompetency = (workId: string, periodKey?: string): Stage[] => {
+    const targetPeriod = periodKey || measurementCompetencyByWork[workId] || '2026-10';
+    const workStagesList = stages.filter(s => s.work_id === workId);
+    const baseWorkStages = workStagesList.length > 0
+      ? workStagesList
+      : INITIAL_STAGES.filter(s => s.work_id === workId);
+
+    const exactKey = `${workId}::${targetPeriod}`;
+    if (stageSnapshotsByCompetency[exactKey]) {
+      return buildStagesWithSnapshotMap(baseWorkStages, stageSnapshotsByCompetency[exactKey]);
+    }
+
+    // Se ainda não existir snapshot para targetPeriod, procura o snapshot imediatamente anterior (<= targetPeriod)
+    const workKeys = Object.keys(stageSnapshotsByCompetency)
+      .filter(k => k.startsWith(`${workId}::`) && !k.endsWith('_migrated'))
+      .map(k => k.split('::')[1])
+      .sort();
+
+    const priorPeriods = workKeys.filter(p => p <= targetPeriod);
+    if (priorPeriods.length > 0) {
+      const closestPrior = priorPeriods[priorPeriods.length - 1];
+      return buildStagesWithSnapshotMap(baseWorkStages, stageSnapshotsByCompetency[`${workId}::${closestPrior}`]);
+    }
+
+    if (workKeys.length > 0) {
+      const earliest = workKeys[0];
+      return buildStagesWithSnapshotMap(baseWorkStages, stageSnapshotsByCompetency[`${workId}::${earliest}`]);
+    }
+
+    return baseWorkStages;
+  };
+
   const getWorkMeasurementCompetency = (workId: string): string => {
     return measurementCompetencyByWork[workId] || '2026-10';
   };
@@ -319,6 +498,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
       return next;
     });
+
+    // Atualiza as etapas ativas desta obra para o snapshot da competência selecionada
+    const competencyStages = getStagesForCompetency(workId, periodKey);
+    if (competencyStages.length > 0) {
+      const compMap = new Map(competencyStages.map(s => [s.id, s]));
+      const nextAllStages = stages.map(s => (s.work_id === workId && compMap.has(s.id) ? compMap.get(s.id)! : s));
+      setStages(nextAllStages);
+      recalculateWorkProgress(workId, nextAllStages);
+    }
   };
 
   // Estados de Sincronização com Supabase Cloud
@@ -437,6 +625,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'gestao_obras_custom_stage_history',
         'gestao_obras_custom_work_metadata',
         'gestao_obras_measurement_competency',
+        'gestao_obras_stage_snapshots_by_competency',
       ]);
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -787,7 +976,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return updatedHist;
     });
 
-    // Salva progresso físico manual em chave protegida permanente
+    // Salva progresso físico manual em chave protegida permanente e no Snapshot da Competência Ativa
+    const activeCompetency = getWorkMeasurementCompetency(target.work_id);
+    setStageSnapshotsByCompetency(prev => {
+      const workStageMap: Record<string, number> = {};
+      nextStages
+        .filter(s => s.work_id === target.work_id)
+        .forEach(s => {
+          if (s.progress_percent !== undefined) {
+            workStageMap[s.id] = s.progress_percent;
+          }
+        });
+      const nextSnapshots = {
+        ...prev,
+        [`${target.work_id}::${activeCompetency}`]: workStageMap,
+        'work-1::2026-10_migrated': { migrated: 1 },
+      };
+      try {
+        localStorage.setItem('gestao_obras_stage_snapshots_by_competency', JSON.stringify(nextSnapshots));
+      } catch {}
+      return nextSnapshots;
+    });
+
     try {
       const progressMap: Record<string, number> = {};
       nextStages.forEach(s => {
@@ -2004,6 +2214,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         measurementCompetencyByWork,
         getWorkMeasurementCompetency,
         setWorkMeasurementCompetency,
+        getStagesForCompetency,
         pcoImportProfiles,
         importPcoWorkbook,
         addWork,
