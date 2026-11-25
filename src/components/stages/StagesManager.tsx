@@ -87,6 +87,10 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
   );
   const rootStages = workStages.filter((s) => !s.parent_id);
   const hierarchicalStages = buildStageHierarchy(workStages);
+  const activeCompetencyProgress = useMemo(
+    () => (rootStages.length > 0 ? calculateWeightedProgress(rootStages) : activeWork?.progress_percent || 0),
+    [rootStages, activeWork?.progress_percent]
+  );
 
   // Simulação de impacto do novo progresso em tempo real
   const parentMacro = selectedStage?.parent_id ? rootStages.find(r => r.id === selectedStage.parent_id) : null;
@@ -262,6 +266,11 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
               onChange={(e) => setWorkMeasurementCompetency(currentWorkId, e.target.value)}
               className="bg-transparent text-cyan-300 font-bold focus:outline-none cursor-pointer"
             >
+              <option value="2026-04" className="bg-slate-900 text-white">Abr/2026</option>
+              <option value="2026-05" className="bg-slate-900 text-white">Mai/2026</option>
+              <option value="2026-06" className="bg-slate-900 text-white">Jun/2026</option>
+              <option value="2026-07" className="bg-slate-900 text-white">Jul/2026</option>
+              <option value="2026-08" className="bg-slate-900 text-white">Ago/2026</option>
               <option value="2026-09" className="bg-slate-900 text-white">Set/2026</option>
               <option value="2026-10" className="bg-slate-900 text-white">Out/2026</option>
               <option value="2026-11" className="bg-slate-900 text-white">Nov/2026</option>
@@ -303,9 +312,9 @@ export const StagesManager: React.FC<StagesManagerProps> = ({ selectedWorkId }) 
         {/* Card 1: Avanço Físico Ponderado */}
         <div className="glass-card p-4 rounded-xl border border-slate-800 flex items-center justify-between">
           <div>
-            <span className="text-[11px] text-slate-400 block font-medium">Avanço Físico Ponderado</span>
+            <span className="text-[11px] text-slate-400 block font-medium">Avanço Físico Ponderado ({currentCompetency})</span>
             <div className="text-2xl font-black text-white mt-1">
-              {formatPercent(activeWork?.progress_percent || 0, 2)}
+              {formatPercent(activeCompetencyProgress, 2)}
             </div>
           </div>
           <div className="p-3 rounded-xl bg-blue-600/20 text-blue-400">

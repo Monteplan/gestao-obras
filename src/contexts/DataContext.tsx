@@ -506,6 +506,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextAllStages = stages.map(s => (s.work_id === workId && compMap.has(s.id) ? compMap.get(s.id)! : s));
       setStages(nextAllStages);
       recalculateWorkProgress(workId, nextAllStages);
+
+      // Persiste a competência selecionada e o progresso ponderado no Supabase Cloud
+      const targetWorkObj = works.find(w => w.id === workId);
+      if (targetWorkObj && isSupabaseConfigured()) {
+        const workSnaps: Record<string, Record<string, number>> = {};
+        Object.keys(stageSnapshotsByCompetency).forEach(k => {
+          if (k.startsWith(`${workId}::`) && !k.endsWith('_migrated')) {
+            workSnaps[k] = stageSnapshotsByCompetency[k];
+          }
+        });
+        const newWeighted = calculateWeightedProgress(competencyStages);
+        saveWorkToSupabase(
+          {
+            ...targetWorkObj,
+            progress_percent: newWeighted,
+            pco_physical_progress: newWeighted,
+          },
+          {
+            activeCompetency: periodKey,
+            snapshots: workSnaps,
+            history: stageProgressHistory.filter(h => h.work_id === workId).slice(0, 40),
+          }
+        ).catch(console.warn);
+      }
     }
   };
 
@@ -595,6 +619,114 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (result.erpToBudgetTotalizerMappings.length > 0) {
           setErpToBudgetTotalizerMappings(result.erpToBudgetTotalizerMappings);
         }
+        if (result.cloudSnapshotsByWork && Object.keys(result.cloudSnapshotsByWork).length > 0) {
+          let mergedSnapshots: Record<string, Record<string, number>> = { ...stageSnapshotsByCompetency };
+          let mergedCompetency: Record<string, string> = { ...measurementCompetencyByWork };
+          let snapshotsChanged = false;
+          let competencyChanged = false;
+
+          // Verifica se o navegador local já possui edições locais mais recentes
+          let hasLocalCustomizations = false;
+          try {
+            hasLocalCustomizations = Boolean(
+              localStorage.getItem('gestao_obras_stage_snapshots_by_competency') ||
+              localStorage.getItem('gestao_obras_custom_stage_progress')
+            );
+          } catch {}
+
+          Object.entries(result.cloudSnapshotsByWork).forEach(([wId, cloudData]) => {
+            if (cloudData.snapshots && typeof cloudData.snapshots === 'object') {
+              Object.entries(cloudData.snapshots).forEach(([snapKey, snapMap]) => {
+                if (!hasLocalCustomizations || !mergedSnapshots[snapKey]) {
+                  mergedSnapshots[snapKey] = snapMap;
+                  snapshotsChanged = true;
+                }
+              });
+            }
+            if (cloudData.activeCompetency && !localStorage.getItem('gestao_obras_measurement_competency')) {
+              mergedCompetency[wId] = cloudData.activeCompetency;
+              competencyChanged = true;
+            }
+            if (
+              Array.isArray(cloudData.history) &&
+              cloudData.history.length > 0 &&
+              !localStorage.getItem('gestao_obras_custom_stage_history')
+            ) {
+              setStageProgressHistory(prev => {
+                const existingIds = new Set(prev.map(h => h.id));
+                const newHist = cloudData.history!.filter((h: any) => h && h.id && !existingIds.has(h.id));
+                if (newHist.length === 0) return prev;
+                const combined = [...newHist, ...prev];
+                try {
+                  localStorage.setItem('gestao_obras_custom_stage_history', JSON.stringify(combined));
+                } catch {}
+                return combined;
+              });
+            }
+          });
+
+          if (snapshotsChanged) {
+            setStageSnapshotsByCompetency(mergedSnapshots);
+            try {
+              localStorage.setItem('gestao_obras_stage_snapshots_by_competency', JSON.stringify(mergedSnapshots));
+            } catch {}
+
+            // Aplica o snapshot da competência ativa nas etapas em memória
+            setStages(prevStages => {
+              let nextAll = [...prevStages];
+              Object.keys(result.cloudSnapshotsByWork).forEach(wId => {
+                const activeComp = mergedCompetency[wId] || '2026-10';
+                const snapMap = mergedSnapshots[`${wId}::${activeComp}`];
+                if (snapMap) {
+                  const wStages = nextAll.filter(s => s.work_id === wId);
+                  const updatedWStages = buildStagesWithSnapshotMap(wStages, snapMap);
+                  const uMap = new Map(updatedWStages.map(s => [s.id, s]));
+                  nextAll = nextAll.map(s => (s.work_id === wId && uMap.has(s.id) ? uMap.get(s.id)! : s));
+                }
+              });
+              return nextAll;
+            });
+          }
+
+          if (competencyChanged) {
+            setMeasurementCompetencyByWork(mergedCompetency);
+            try {
+              localStorage.setItem('gestao_obras_measurement_competency', JSON.stringify(mergedCompetency));
+            } catch {}
+          }
+        }
+
+        // Caso o navegador local tenha edições de etapas (ex: localhost) que ainda não subiram para a nuvem, sincroniza automaticamente
+        try {
+          const localCustomRaw = localStorage.getItem('gestao_obras_custom_stage_progress');
+          if (localCustomRaw) {
+            const w1FromDb = result.works.find(w => w.id === 'work-1' || w.code === 'OBR-001');
+            const w1CloudHasSnaps = Boolean(result.cloudSnapshotsByWork?.['work-1']?.snapshots);
+            if (w1FromDb && !w1CloudHasSnaps) {
+              const workSnaps: Record<string, Record<string, number>> = {};
+              Object.keys(stageSnapshotsByCompetency).forEach(k => {
+                if (k.startsWith('work-1::') && !k.endsWith('_migrated')) {
+                  workSnaps[k] = stageSnapshotsByCompetency[k];
+                }
+              });
+              const activeComp = measurementCompetencyByWork['work-1'] || '2026-10';
+              const w1Stages = getStagesForCompetency('work-1', activeComp);
+              const liveWeighted = calculateWeightedProgress(w1Stages);
+              saveWorkToSupabase(
+                {
+                  ...w1FromDb,
+                  progress_percent: liveWeighted,
+                  pco_physical_progress: liveWeighted,
+                },
+                {
+                  activeCompetency: activeComp,
+                  snapshots: workSnaps,
+                  history: stageProgressHistory.filter(h => h.work_id === 'work-1').slice(0, 40),
+                }
+              ).catch(console.warn);
+            }
+          }
+        } catch {}
         setSupabaseSyncStatus('synced');
         setLastSyncedAt(result.meta.syncedAt);
       } else {
@@ -978,25 +1110,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Salva progresso físico manual em chave protegida permanente e no Snapshot da Competência Ativa
     const activeCompetency = getWorkMeasurementCompetency(target.work_id);
-    setStageSnapshotsByCompetency(prev => {
-      const workStageMap: Record<string, number> = {};
-      nextStages
-        .filter(s => s.work_id === target.work_id)
-        .forEach(s => {
-          if (s.progress_percent !== undefined) {
-            workStageMap[s.id] = s.progress_percent;
-          }
-        });
-      const nextSnapshots = {
-        ...prev,
-        [`${target.work_id}::${activeCompetency}`]: workStageMap,
-        'work-1::2026-10_migrated': { migrated: 1 },
-      };
-      try {
-        localStorage.setItem('gestao_obras_stage_snapshots_by_competency', JSON.stringify(nextSnapshots));
-      } catch {}
-      return nextSnapshots;
-    });
+    const workStageMap: Record<string, number> = {};
+    nextStages
+      .filter(s => s.work_id === target.work_id)
+      .forEach(s => {
+        if (s.progress_percent !== undefined) {
+          workStageMap[s.id] = s.progress_percent;
+        }
+      });
+
+    const updatedSnapshotsForAll = {
+      ...stageSnapshotsByCompetency,
+      [`${target.work_id}::${activeCompetency}`]: workStageMap,
+      'work-1::2026-10_migrated': { migrated: 1 },
+    };
+    setStageSnapshotsByCompetency(updatedSnapshotsForAll);
+    try {
+      localStorage.setItem('gestao_obras_stage_snapshots_by_competency', JSON.stringify(updatedSnapshotsForAll));
+    } catch {}
 
     try {
       const progressMap: Record<string, number> = {};
@@ -1008,16 +1139,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('gestao_obras_custom_stage_progress', JSON.stringify(progressMap));
     } catch {}
 
-    // Sincroniza o novo avanço físico ponderado da obra na tabela public.works do Supabase
+    // Sincroniza o novo avanço físico ponderado da obra e os snapshots mensais na tabela public.works do Supabase
     const targetWorkObj = works.find(w => w.id === target.work_id);
     if (targetWorkObj && isSupabaseConfigured() && supabase) {
       const workAfterStages = nextStages.filter(s => s.work_id === target.work_id);
       const newWeightedProgress = calculateWeightedProgress(workAfterStages);
-      saveWorkToSupabase({
-        ...targetWorkObj,
-        progress_percent: newWeightedProgress,
-        pco_physical_progress: newWeightedProgress,
-      }).catch(console.warn);
+      const workSnapsOnly: Record<string, Record<string, number>> = {};
+      Object.keys(updatedSnapshotsForAll).forEach(k => {
+        if (k.startsWith(`${target.work_id}::`) && !k.endsWith('_migrated')) {
+          workSnapsOnly[k] = updatedSnapshotsForAll[k];
+        }
+      });
+      const updatedWorkHistory = [...historyEntriesToRecord, ...stageProgressHistory]
+        .filter(h => h.work_id === target.work_id)
+        .slice(0, 40);
+
+      saveWorkToSupabase(
+        {
+          ...targetWorkObj,
+          progress_percent: newWeightedProgress,
+          pco_physical_progress: newWeightedProgress,
+        },
+        {
+          activeCompetency,
+          snapshots: workSnapsOnly,
+          history: updatedWorkHistory,
+        }
+      ).catch(console.warn);
     }
     addAuditLog(
       'Atualizar Progresso',

@@ -72,12 +72,65 @@ export interface SupabaseSyncData {
   revenues: Revenue[];
   budgetAccounts: BudgetAccount[];
   erpToBudgetTotalizerMappings: ErpToBudgetTotalizerMapping[];
+  cloudSnapshotsByWork: Record<string, {
+    activeCompetency?: string;
+    snapshots?: Record<string, Record<string, number>>;
+    history?: any[];
+  }>;
   meta: {
     totalEntries: number;
     totalAmount: number;
     syncedAt: string;
     source: 'supabase_cloud';
   };
+}
+
+const SNAPSHOT_META_DELIMITER = '\n<!--EAP_SNAPSHOTS:';
+const SNAPSHOT_META_END = '-->';
+
+export function extractWorkCloudSnapshots(rawNotes?: string | null): {
+  cleanNotes: string;
+  activeCompetency?: string;
+  snapshots?: Record<string, Record<string, number>>;
+  history?: any[];
+} {
+  if (!rawNotes) return { cleanNotes: '' };
+  const idx = rawNotes.indexOf(SNAPSHOT_META_DELIMITER);
+  if (idx === -1) return { cleanNotes: rawNotes };
+  const cleanNotes = rawNotes.slice(0, idx).trim();
+  const rest = rawNotes.slice(idx + SNAPSHOT_META_DELIMITER.length);
+  const endIdx = rest.indexOf(SNAPSHOT_META_END);
+  const jsonStr = endIdx !== -1 ? rest.slice(0, endIdx) : rest;
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return {
+      cleanNotes,
+      activeCompetency: parsed?.activeCompetency,
+      snapshots: parsed?.snapshots,
+      history: parsed?.history,
+    };
+  } catch {
+    return { cleanNotes };
+  }
+}
+
+export function embedWorkCloudSnapshots(
+  cleanNotes: string | undefined | null,
+  payload?: {
+    activeCompetency?: string;
+    snapshots?: Record<string, Record<string, number>>;
+    history?: any[];
+  }
+): string | null {
+  const base = (cleanNotes || '').split(SNAPSHOT_META_DELIMITER)[0].trim();
+  if (!payload || (!payload.snapshots && !payload.activeCompetency)) {
+    return base || null;
+  }
+  try {
+    return `${base}${SNAPSHOT_META_DELIMITER}${JSON.stringify(payload)}${SNAPSHOT_META_END}`;
+  } catch {
+    return base || null;
+  }
 }
 
 /**
@@ -191,9 +244,18 @@ export async function fetchAllFromSupabase(): Promise<SupabaseSyncData | null> {
 
     console.log(`[SupabaseSync] Sucesso: ${(dbWorks || []).length} obras, ${dbBudgetAccounts.length} contas de orçamento e ${allEntries.length} lançamentos recuperados do banco.`);
 
-    // Mapeamento de Obras preservando o ID de cada obra ('work-1', 'work-2', etc.)
+    // Mapeamento de Obras preservando o ID de cada obra ('work-1', 'work-2', etc.) e extraindo snapshots mensais da EAP salvos na nuvem
+    const cloudSnapshotsByWork: SupabaseSyncData['cloudSnapshotsByWork'] = {};
     const mappedWorks: Work[] = (dbWorks || []).map((w: any, idx: number) => {
       const frontId = toFrontendWorkId(w.id, w.code);
+      const extracted = extractWorkCloudSnapshots(w.notes);
+      if (extracted.snapshots || extracted.activeCompetency || extracted.history) {
+        cloudSnapshotsByWork[frontId] = {
+          activeCompetency: extracted.activeCompetency,
+          snapshots: extracted.snapshots,
+          history: extracted.history,
+        };
+      }
       return {
         id: frontId,
         organization_id: w.organization_id || 'org-1',
@@ -226,7 +288,7 @@ export async function fetchAllFromSupabase(): Promise<SupabaseSyncData | null> {
         private_area_m2: Number(w.private_area_m2 || 0),
         cub_reference_m2: Number(w.cub_reference_m2 || 0),
         vgv_total: Number(w.vgv_total || 0),
-        notes: w.notes || '',
+        notes: extracted.cleanNotes || '',
         created_at: w.created_at,
         updated_at: w.updated_at,
       };
@@ -335,6 +397,7 @@ export async function fetchAllFromSupabase(): Promise<SupabaseSyncData | null> {
       revenues: mappedRevenues,
       budgetAccounts: mappedBudgetAccounts,
       erpToBudgetTotalizerMappings: mappedDePara,
+      cloudSnapshotsByWork,
       meta: {
         totalEntries: allEntries.length,
         totalAmount,
@@ -351,13 +414,51 @@ export async function fetchAllFromSupabase(): Promise<SupabaseSyncData | null> {
 /**
  * Garante que uma obra exista e esteja atualizada na tabela `public.works` do Supabase
  */
-export async function saveWorkToSupabase(work: Work): Promise<{ success: boolean; supabaseWorkUuid: string; error?: string }> {
+export async function saveWorkToSupabase(
+  work: Work,
+  cloudSnapshotPayload?: {
+    activeCompetency?: string;
+    snapshots?: Record<string, Record<string, number>>;
+    history?: any[];
+  }
+): Promise<{ success: boolean; supabaseWorkUuid: string; error?: string }> {
   const supabaseWorkUuid = toSupabaseWorkUuid(work.id);
   if (!isSupabaseConfigured() || !supabase) {
     return { success: false, supabaseWorkUuid, error: 'Supabase não configurado' };
   }
 
   try {
+    let finalNotes = work.notes || null;
+    if (cloudSnapshotPayload) {
+      finalNotes = embedWorkCloudSnapshots(work.notes, cloudSnapshotPayload);
+    } else {
+      // Preserva metadados existentes no localStorage para não sobrescrever em atualizações simples da obra
+      try {
+        const localSnapsRaw = localStorage.getItem('gestao_obras_stage_snapshots_by_competency');
+        const localCompRaw = localStorage.getItem('gestao_obras_measurement_competency');
+        const localHistRaw = localStorage.getItem('gestao_obras_custom_stage_history');
+        if (localSnapsRaw) {
+          const allSnaps = JSON.parse(localSnapsRaw);
+          const workSnaps: Record<string, Record<string, number>> = {};
+          Object.keys(allSnaps).forEach(k => {
+            if (k.startsWith(`${work.id}::`) && !k.endsWith('_migrated')) {
+              workSnaps[k] = allSnaps[k];
+            }
+          });
+          const compMap = localCompRaw ? JSON.parse(localCompRaw) : {};
+          const allHist = localHistRaw ? JSON.parse(localHistRaw) : [];
+          const workHist = Array.isArray(allHist) ? allHist.filter((h: any) => h.work_id === work.id).slice(0, 40) : [];
+          if (Object.keys(workSnaps).length > 0) {
+            finalNotes = embedWorkCloudSnapshots(work.notes, {
+              activeCompetency: compMap[work.id] || '2026-10',
+              snapshots: workSnaps,
+              history: workHist,
+            });
+          }
+        }
+      } catch {}
+    }
+
     const payload = {
       id: supabaseWorkUuid,
       organization_id: '11111111-1111-1111-1111-111111111111',
@@ -388,7 +489,7 @@ export async function saveWorkToSupabase(work: Work): Promise<{ success: boolean
       private_area_m2: Number(work.private_area_m2 || 0),
       cub_reference_m2: Number(work.cub_reference_m2 || 0),
       vgv_total: Number(work.vgv_total || 0),
-      notes: work.notes || null,
+      notes: finalNotes,
       updated_at: new Date().toISOString(),
     };
 
